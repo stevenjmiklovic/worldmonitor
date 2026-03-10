@@ -1,4 +1,4 @@
-import type { NewsItem, Monitor, PanelConfig, MapLayers, InternetOutage, SocialUnrestEvent, MilitaryFlight, MilitaryFlightCluster, MilitaryVessel, MilitaryVesselCluster, CyberThreat, USNIFleetReport } from '@/types';
+import type { NewsItem, Monitor, PanelConfig, MapLayers, InternetOutage, SocialUnrestEvent, MilitaryFlight, MilitaryFlightCluster, MilitaryVessel, MilitaryVesselCluster, CyberThreat, USNIFleetReport, GameState } from '@/types';
 import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
 import type { IranEvent } from '@/generated/client/worldmonitor/conflict/v1/service_client';
 import type { SecurityAdvisory } from '@/services/security-advisories';
@@ -25,6 +25,9 @@ import type { SpeciesComebackPanel } from '@/components/SpeciesComebackPanel';
 import type { RenewableEnergyPanel } from '@/components/RenewableEnergyPanel';
 import type { TvModeController } from '@/services/tv-mode';
 import type { BreakingNewsBanner } from '@/components/BreakingNewsBanner';
+import type { GameHudPanel } from '@/components/GameHudPanel';
+import type { GameBriefingPanel } from '@/components/GameBriefingPanel';
+import type { GameLogPanel } from '@/components/GameLogPanel';
 
 export interface CountryBriefSignals {
   criticalNews: number;
@@ -118,6 +121,13 @@ export interface AppContext {
   renewablePanel: RenewableEnergyPanel | null;
   tvMode: TvModeController | null;
   happyAllItems: NewsItem[];
+
+  // Game variant state (The Great Game)
+  gameHudPanel: GameHudPanel | null;
+  gameBriefingPanel: GameBriefingPanel | null;
+  gameLogPanel: GameLogPanel | null;
+  gameState: GameState | null;
+
   isDestroyed: boolean;
   isPlaybackMode: boolean;
   isIdle: boolean;

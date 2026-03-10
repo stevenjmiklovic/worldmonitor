@@ -1327,3 +1327,74 @@ export interface MapDatacenterCluster {
   plannedCount?: number;
   sampled?: boolean;
 }
+
+// ============================================
+// The Great Game – simulation types
+// ============================================
+
+export type GameRegionId = 'northAmerica' | 'europe' | 'eastAsia' | 'southAsia' | 'mena' | 'subSaharanAfrica' | 'latam' | 'centralAsia' | 'oceania';
+
+export interface GameResources {
+  politicalCapital: number;
+  intelligenceAssets: number;
+  militaryReadiness: number;
+  economicInfluence: number;
+  technologyLevel: number;
+}
+
+export type GameActionType =
+  | 'deployAgent'
+  | 'formAlliance'
+  | 'imposeSanctions'
+  | 'fundCoup'
+  | 'cyberOperation'
+  | 'militaryExercise'
+  | 'economicAid'
+  | 'tradeAgreement'
+  | 'covertInfluence'
+  | 'diplomaticSummit';
+
+export interface GameAction {
+  type: GameActionType;
+  label: string;
+  description: string;
+  targetRegion: GameRegionId;
+  cost: Partial<GameResources>;
+}
+
+export interface GameRegionState {
+  id: GameRegionId;
+  name: string;
+  influence: number;      // -100 (hostile) to 100 (allied)
+  stability: number;      // 0–100
+  threatLevel: number;    // 0–100
+}
+
+export interface GameEvent {
+  id: string;
+  turn: number;
+  headline: string;
+  description: string;
+  region: GameRegionId;
+  impact: Partial<Record<GameRegionId, { influence?: number; stability?: number; threatLevel?: number }>>;
+  resourceDelta?: Partial<GameResources>;
+}
+
+export type GamePhase = 'briefing' | 'action' | 'resolution' | 'gameOver';
+
+export interface GameObjective {
+  id: string;
+  description: string;
+  completed: boolean;
+}
+
+export interface GameState {
+  turn: number;
+  maxTurns: number;
+  phase: GamePhase;
+  resources: GameResources;
+  regions: Record<GameRegionId, GameRegionState>;
+  log: GameEvent[];
+  objectives: GameObjective[];
+  score: number;
+}
