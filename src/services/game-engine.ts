@@ -203,7 +203,7 @@ const EVENT_TEMPLATES: EventTemplate[] = [
   },
   {
     headline: 'Breakthrough in renewable energy technology',
-    description: 'A next-generation solar cell achieves 50 % efficiency, reshaping energy markets.',
+    description: 'A next-generation solar cell achieves 50% efficiency, reshaping energy markets.',
     regions: ['northAmerica', 'europe', 'eastAsia'],
     impact: r => ({ [r]: { stability: 5, influence: 3 } }),
     resourceDelta: { technologyLevel: 8 },
