@@ -1330,9 +1330,18 @@ export interface MapDatacenterCluster {
 
 // ============================================
 // The Great Game – simulation types
+// (Inspired by the 1993 DOS classic Shadow President)
 // ============================================
 
 export type GameRegionId = 'northAmerica' | 'europe' | 'eastAsia' | 'southAsia' | 'mena' | 'subSaharanAfrica' | 'latam' | 'centralAsia' | 'oceania';
+
+/** Government type for each region – affects action outcomes (Shadow President). */
+export type GovernmentType = 'democracy' | 'autocracy' | 'monarchy' | 'theocracy' | 'communist' | 'militaryJunta';
+
+/** DEFCON nuclear-readiness levels (1 = nuclear war imminent, 5 = peacetime). */
+export type DefconLevel = 1 | 2 | 3 | 4 | 5;
+
+// -- Resources & Budget -------------------------------------------------------
 
 export interface GameResources {
   politicalCapital: number;
@@ -1342,33 +1351,88 @@ export interface GameResources {
   technologyLevel: number;
 }
 
+/** Per-turn budget allocation (Shadow President style). Sums to 100 %. */
+export interface GameBudget {
+  defense: number;        // → militaryReadiness regen
+  intelligence: number;   // → intelligenceAssets regen
+  diplomacy: number;      // → politicalCapital regen
+  economy: number;        // → economicInfluence regen
+  technology: number;     // → technologyLevel regen
+}
+
+// -- Advisors ------------------------------------------------------------------
+
+export type GameAdvisorId = 'secState' | 'secDef' | 'ciaDirector' | 'econAdvisor' | 'jointChiefs';
+
+export interface GameAdvisor {
+  id: GameAdvisorId;
+  name: string;
+  title: string;
+  /** Brief flavour description of their outlook. */
+  perspective: string;
+}
+
+export interface AdvisorBriefing {
+  advisorId: GameAdvisorId;
+  text: string;
+}
+
+// -- Actions -------------------------------------------------------------------
+
+export type GameActionCategory = 'diplomatic' | 'economic' | 'military' | 'covert';
+
 export type GameActionType =
-  | 'deployAgent'
-  | 'formAlliance'
-  | 'imposeSanctions'
-  | 'fundCoup'
-  | 'cyberOperation'
-  | 'militaryExercise'
+  // Diplomatic (Shadow President: praise / warn / threaten / treaty)
+  | 'diplomaticPraise'
+  | 'diplomaticWarn'
+  | 'diplomaticThreaten'
+  | 'proposeTreaty'
+  | 'diplomaticSummit'
+  // Economic
   | 'economicAid'
   | 'tradeAgreement'
+  | 'imposeSanctions'
+  | 'liftSanctions'
+  // Military
+  | 'militaryExercise'
+  | 'deployTroops'
+  | 'withdrawTroops'
+  | 'nuclearPosture'
+  // Covert (Shadow President: destabilise, propaganda, assassinate)
+  | 'deployAgent'
   | 'covertInfluence'
-  | 'diplomaticSummit';
+  | 'covertDestabilise'
+  | 'cyberOperation'
+  | 'fundCoup';
 
 export interface GameAction {
   type: GameActionType;
+  category: GameActionCategory;
   label: string;
   description: string;
   targetRegion: GameRegionId;
   cost: Partial<GameResources>;
+  /** How risky the action is (0-100). High-risk covert ops may leak. */
+  risk: number;
+  /** Approval impact if the action becomes public (covert ops risk exposure). */
+  approvalImpact: number;
 }
+
+// -- Region state --------------------------------------------------------------
 
 export interface GameRegionState {
   id: GameRegionId;
   name: string;
-  influence: number;      // -100 (hostile) to 100 (allied)
-  stability: number;      // 0–100
-  threatLevel: number;    // 0–100
+  influence: number;        // -100 (hostile) to 100 (allied)
+  stability: number;        // 0–100
+  threatLevel: number;      // 0–100
+  governmentType: GovernmentType;
+  nuclearCapable: boolean;
+  sanctioned: boolean;
+  troopsDeployed: boolean;
 }
+
+// -- Events --------------------------------------------------------------------
 
 export interface GameEvent {
   id: string;
@@ -1378,7 +1442,13 @@ export interface GameEvent {
   region: GameRegionId;
   impact: Partial<Record<GameRegionId, { influence?: number; stability?: number; threatLevel?: number }>>;
   resourceDelta?: Partial<GameResources>;
+  approvalDelta?: number;
+  defconDelta?: number;
+  /** If present, advisor briefings generated alongside this event. */
+  advisorBriefings?: AdvisorBriefing[];
 }
+
+// -- Phases & objectives -------------------------------------------------------
 
 export type GamePhase = 'briefing' | 'action' | 'resolution' | 'gameOver';
 
@@ -1388,13 +1458,21 @@ export interface GameObjective {
   completed: boolean;
 }
 
+// -- Top-level state -----------------------------------------------------------
+
 export interface GameState {
   turn: number;
   maxTurns: number;
   phase: GamePhase;
   resources: GameResources;
+  budget: GameBudget;
   regions: Record<GameRegionId, GameRegionState>;
   log: GameEvent[];
   objectives: GameObjective[];
   score: number;
+  /** Domestic approval 0-100 (Shadow President). Drops below 15 → impeachment. */
+  approval: number;
+  /** DEFCON level 5 (peace) → 1 (nuclear war). Reaching 1 ends the game. */
+  defcon: DefconLevel;
+  advisors: GameAdvisor[];
 }

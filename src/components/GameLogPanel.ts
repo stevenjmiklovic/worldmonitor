@@ -1,8 +1,8 @@
 /**
  * GameLogPanel – scrolling event log for The Great Game.
  *
- * Displays every event that has occurred during the simulation in reverse
- * chronological order.  Subscribes to state changes from GameHudPanel.
+ * Displays every event in reverse chronological order, with approval and
+ * DEFCON change indicators inspired by Shadow President's event ticker.
  */
 
 import { Panel } from './Panel';
@@ -18,24 +18,40 @@ export class GameLogPanel extends Panel {
     this.content.appendChild(this.bodyEl);
   }
 
-  /** Called by GameHudPanel whenever the game state changes. */
   update(state: GameState): void {
     this.bodyEl.innerHTML = '';
 
     const reversed = [...state.log].reverse();
     for (const evt of reversed) {
       const isAction = evt.id.startsWith('act-');
+      const borderColor = isAction ? 'var(--accent,#4488ff)' : '#ffcc44';
       const card = h('div', {
-        style: `padding:5px 8px;margin-bottom:4px;border-radius:4px;border-left:3px solid ${isAction ? 'var(--accent,#4488ff)' : '#ffcc44'};background:var(--panel-bg,#1a1a2e)`,
+        style: `padding:5px 8px;margin-bottom:4px;border-radius:4px;border-left:3px solid ${borderColor};background:var(--panel-bg,#1a1a2e)`,
       });
-      card.append(
-        h('div', { style: 'display:flex;justify-content:space-between;font-size:0.9em;opacity:0.6' },
-          h('span', null, `Turn ${evt.turn}`),
-          h('span', null, evt.region),
-        ),
-        h('div', { style: 'font-weight:600' }, evt.headline),
-        h('div', { style: 'opacity:0.7;font-size:0.9em' }, evt.description),
-      );
+
+      const metaRow = h('div', { style: 'display:flex;justify-content:space-between;font-size:0.9em;opacity:0.6' });
+      metaRow.append(h('span', null, `Turn ${evt.turn}`), h('span', null, evt.region));
+
+      const headline = h('div', { style: 'font-weight:600' }, evt.headline);
+      const desc = h('div', { style: 'opacity:0.7;font-size:0.9em' }, evt.description);
+
+      card.append(metaRow, headline, desc);
+
+      // Shadow President-style delta badges
+      const badges: string[] = [];
+      if (evt.approvalDelta != null && evt.approvalDelta !== 0) {
+        const sign = evt.approvalDelta > 0 ? '+' : '';
+        badges.push(`Approval ${sign}${evt.approvalDelta}`);
+      }
+      if (evt.defconDelta != null && evt.defconDelta !== 0) {
+        const sign = evt.defconDelta > 0 ? '+' : '';
+        badges.push(`DEFCON ${sign}${evt.defconDelta}`);
+      }
+      if (badges.length > 0) {
+        const badgeEl = h('div', { style: 'font-size:0.8em;margin-top:2px;opacity:0.6;font-style:italic' }, badges.join(' · '));
+        card.appendChild(badgeEl);
+      }
+
       this.bodyEl.appendChild(card);
     }
 
