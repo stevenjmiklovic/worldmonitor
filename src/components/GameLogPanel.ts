@@ -14,7 +14,7 @@ export class GameLogPanel extends Panel {
 
   constructor() {
     super({ id: 'game-log', title: 'The Great Game — Event Log', trackActivity: false });
-    this.bodyEl = h('div', { style: 'padding:8px;font-size:0.83em;max-height:400px;overflow-y:auto' });
+    this.bodyEl = h('div', { style: 'padding:8px;font-size:0.83em;max-height:400px;overflow-y:auto', role: 'log', 'aria-live': 'polite', 'aria-label': 'Game event log' });
     this.content.appendChild(this.bodyEl);
   }
 
@@ -24,13 +24,19 @@ export class GameLogPanel extends Panel {
     const reversed = [...state.log].reverse();
     for (const evt of reversed) {
       const isAction = evt.id.startsWith('act-');
-      const borderColor = isAction ? 'var(--accent,#4488ff)' : '#ffcc44';
+      const isAi     = evt.id.startsWith('ai-');
+      const borderColor = isAction ? 'var(--accent,#4488ff)' : isAi ? '#44ccff' : '#ffcc44';
+      const icon        = isAction ? '⚡' : isAi ? '🤖' : '🌍';
       const card = h('div', {
         style: `padding:5px 8px;margin-bottom:4px;border-radius:4px;border-left:3px solid ${borderColor};background:var(--panel-bg,#1a1a2e)`,
       });
 
-      const metaRow = h('div', { style: 'display:flex;justify-content:space-between;font-size:0.9em;opacity:0.6' });
-      metaRow.append(h('span', null, `Turn ${evt.turn}`), h('span', null, evt.region));
+      const metaRow = h('div', { style: 'display:flex;justify-content:space-between;align-items:center;font-size:0.9em;opacity:0.6;margin-bottom:1px' });
+      const metaLeft = h('span', null, `${icon} Turn ${evt.turn}`);
+      const regionPill = h('span', {
+        style: `font-size:0.8em;padding:1px 5px;border-radius:3px;background:${borderColor}22;color:${borderColor}`,
+      }, evt.region);
+      metaRow.append(metaLeft, regionPill);
 
       const headline = h('div', { style: 'font-weight:600' }, evt.headline);
       const desc = h('div', { style: 'opacity:0.7;font-size:0.9em' }, evt.description);

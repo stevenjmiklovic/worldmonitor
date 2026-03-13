@@ -33,10 +33,16 @@ export class GameBriefingPanel extends Panel {
     this.bodyEl.innerHTML = '';
 
     const table = h('table', { style: 'width:100%;border-collapse:collapse;min-width:520px' });
+    const caption = h('caption', { style: 'display:none' }, 'Regional Intelligence — influence, stability, threat level and status per region');
+    table.appendChild(caption);
     const thead = h('thead');
     const headRow = h('tr');
-    for (const col of ['Region', 'Gov', 'Inf', 'Stab', 'Threat', 'Status']) {
-      const th = h('th', { style: 'text-align:left;padding:4px 5px;border-bottom:1px solid var(--border,#333);font-size:0.88em;white-space:nowrap' }, col);
+    const colHeaders: [string, string][] = [
+      ['Region', 'Region name'], ['Gov', 'Government type'], ['Inf', 'Influence (−100 hostile to 100 allied)'],
+      ['Stab', 'Stability (0–100)'], ['Threat', 'Threat level (0–100)'], ['Status', 'Status flags'],
+    ];
+    for (const [label, fullLabel] of colHeaders) {
+      const th = h('th', { style: 'text-align:left;padding:4px 5px;border-bottom:1px solid var(--border,#333);font-size:0.88em;white-space:nowrap', scope: 'col', title: fullLabel }, label);
       headRow.appendChild(th);
     }
     thead.appendChild(headRow);
@@ -46,13 +52,17 @@ export class GameBriefingPanel extends Panel {
     const regionIds = Object.keys(state.regions) as GameRegionId[];
     for (const rId of regionIds) {
       const region: GameRegionState = state.regions[rId];
-      const tr = h('tr');
+      const isHotspot = region.threatLevel > 65;
+      const isCritical = region.stability < 30;
+      const rowBg = isCritical ? 'background:rgba(255,50,50,0.06)' : '';
+      const tr = h('tr', { style: rowBg });
 
-      const nameCell = h('td', { style: 'padding:3px 5px' }, region.name);
+      const nameCell = h('td', { style: 'padding:3px 5px;white-space:nowrap' }, region.name);
       const govCell  = h('td', { style: 'padding:3px 5px;font-size:0.85em' }, GOV_LABELS[region.governmentType] ?? region.governmentType);
       const infCell  = h('td', { style: `padding:3px 5px;font-weight:600;color:${colorForValue(region.influence, -100, 100)}` }, String(region.influence));
       const stabCell = h('td', { style: `padding:3px 5px;font-weight:600;color:${colorForValue(region.stability, 0, 100)}` }, String(region.stability));
-      const thrCell  = h('td', { style: `padding:3px 5px;font-weight:600;color:${colorForThreat(region.threatLevel)}` }, String(region.threatLevel));
+      const threatLabel = `${region.threatLevel}${isHotspot ? ' 🔥' : ''}`;
+      const thrCell  = h('td', { style: `padding:3px 5px;font-weight:600;color:${colorForThreat(region.threatLevel)}` }, threatLabel);
 
       const badges: string[] = [];
       if (region.nuclearCapable)  badges.push('☢️');

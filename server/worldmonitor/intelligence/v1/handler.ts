@@ -6,6 +6,7 @@ import { classifyEvent } from './classify-event';
 import { getCountryIntelBrief } from './get-country-intel-brief';
 import { searchGdeltDocuments } from './search-gdelt-documents';
 import { deductSituation } from './deduct-situation';
+import { generateGameEvents } from './generate-game-events';
 
 export const intelligenceHandler: IntelligenceServiceHandler = {
   getRiskScores,
@@ -14,4 +15,5 @@ export const intelligenceHandler: IntelligenceServiceHandler = {
   getCountryIntelBrief,
   searchGdeltDocuments,
   deductSituation,
+  generateGameEvents,
 };

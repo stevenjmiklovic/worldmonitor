@@ -150,6 +150,29 @@ export interface DeductSituationResponse {
   provider: string;
 }
 
+export interface GenerateGameEventsRequest {
+  headlines: string[];
+  turn: number;
+  count: number;
+}
+
+export interface GeneratedGameEvent {
+  headline: string;
+  description: string;
+  region: string;
+  stabilityDelta: number;
+  influenceDelta: number;
+  threatDelta: number;
+  approvalDelta: number;
+  defconDelta: number;
+}
+
+export interface GenerateGameEventsResponse {
+  events: GeneratedGameEvent[];
+  provider: string;
+  fallback: boolean;
+}
+
 export type SeverityLevel = "SEVERITY_LEVEL_UNSPECIFIED" | "SEVERITY_LEVEL_LOW" | "SEVERITY_LEVEL_MEDIUM" | "SEVERITY_LEVEL_HIGH";
 
 export type TrendDirection = "TREND_DIRECTION_UNSPECIFIED" | "TREND_DIRECTION_RISING" | "TREND_DIRECTION_STABLE" | "TREND_DIRECTION_FALLING";
@@ -358,6 +381,29 @@ export class IntelligenceServiceClient {
     }
 
     return await resp.json() as DeductSituationResponse;
+  }
+
+  async generateGameEvents(req: GenerateGameEventsRequest, options?: IntelligenceServiceCallOptions): Promise<GenerateGameEventsResponse> {
+    const url = this.baseURL + "/api/intelligence/v1/generate-game-events";
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...this.defaultHeaders,
+      ...options?.headers,
+    };
+
+    const resp = await this.fetchFn(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(req),
+      signal: options?.signal,
+    });
+
+    if (!resp.ok) {
+      return this.handleError(resp);
+    }
+
+    return await resp.json() as GenerateGameEventsResponse;
   }
 
   private async handleError(resp: Response): Promise<never> {
