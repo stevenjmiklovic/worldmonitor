@@ -269,6 +269,197 @@ const EVENT_TEMPLATES: EventTemplate[] = [
     approvalDelta: -2,
     defconDelta: -1,
   },
+  // -- Additional event variety --
+  {
+    headline: 'Election result disputed; rival factions clash in streets',
+    description: 'Contested ballot counts trigger urban violence and a wave of international observer criticism.',
+    regions: ['latam', 'subSaharanAfrica', 'southAsia', 'mena'],
+    impact: r => ({ [r]: { stability: -12, influence: -4, threatLevel: 8 } }),
+    approvalDelta: -3,
+    cascade: true,
+  },
+  {
+    headline: 'Currency collapses amid hyperinflation spiral',
+    description: 'Emergency capital controls imposed as the national currency loses 40% of its value overnight.',
+    regions: ['latam', 'subSaharanAfrica', 'centralAsia'],
+    impact: r => ({ [r]: { stability: -10, threatLevel: 8 } }),
+    resourceDelta: { economicInfluence: -10 },
+    approvalDelta: -5,
+    cascade: true,
+  },
+  {
+    headline: 'Severe drought triggers regional food security emergency',
+    description: 'Failed harvests reduce grain reserves to critical levels; the UN issues an emergency food appeal.',
+    regions: ['subSaharanAfrica', 'mena', 'southAsia', 'centralAsia'],
+    impact: r => ({ [r]: { stability: -10, threatLevel: 8, influence: -3 } }),
+    resourceDelta: { economicInfluence: -6 },
+    approvalDelta: -4,
+    cascade: true,
+  },
+  {
+    headline: 'Critical energy pipeline destroyed in sabotage attack',
+    description: 'A major energy artery is severed, triggering supply shortages and diplomatic finger-pointing.',
+    regions: ['europe', 'centralAsia', 'mena'],
+    impact: r => ({ [r]: { stability: -8, threatLevel: 14 } }),
+    resourceDelta: { politicalCapital: -6, economicInfluence: -8 },
+    approvalDelta: -4,
+    defconDelta: -1,
+  },
+  {
+    headline: 'Historic peace agreement ends decade-long conflict',
+    description: 'Rival factions sign a comprehensive settlement brokered by international mediators.',
+    regions: ['mena', 'subSaharanAfrica', 'southAsia', 'centralAsia'],
+    impact: r => ({ [r]: { stability: 15, influence: 8, threatLevel: -12 } }),
+    resourceDelta: { politicalCapital: 5 },
+    approvalDelta: 5,
+    defconDelta: 1,
+  },
+  {
+    headline: 'Head of state assassinated; emergency rule declared',
+    description: 'A high-profile killing plunges the country into political crisis; security forces mobilise nationwide.',
+    regions: ['mena', 'centralAsia', 'subSaharanAfrica', 'latam'],
+    impact: r => ({ [r]: { stability: -20, threatLevel: 18, influence: -6 } }),
+    approvalDelta: -6,
+    defconDelta: -1,
+    cascade: true,
+  },
+  {
+    headline: 'Trade war erupts with sweeping retaliatory tariffs',
+    description: 'Tit-for-tat measures cascade as major blocs impose unprecedented trade barriers across dozens of sectors.',
+    regions: ['northAmerica', 'europe', 'eastAsia'],
+    impact: r => ({ [r]: { stability: -6, influence: -5 } }),
+    resourceDelta: { economicInfluence: -12 },
+    approvalDelta: -4,
+    cascade: true,
+  },
+  {
+    headline: 'Pro-democracy protests turn violent after security crackdown',
+    description: 'Footage of clashes between demonstrators and riot police spreads globally, prompting calls for intervention.',
+    regions: ['mena', 'centralAsia', 'eastAsia', 'latam'],
+    impact: r => ({ [r]: { stability: -14, influence: -5, threatLevel: 10 } }),
+    approvalDelta: -3,
+    cascade: true,
+  },
+  {
+    headline: 'Separatist movement seizes regional capital, declares autonomous zone',
+    description: 'A breakaway faction takes control of government buildings and stands up a provisional administration.',
+    regions: ['europe', 'mena', 'centralAsia', 'southAsia'],
+    impact: r => ({ [r]: { stability: -16, threatLevel: 15, influence: -6 } }),
+    approvalDelta: -4,
+    defconDelta: -1,
+    cascade: true,
+  },
+  {
+    headline: 'G20 summit collapses without communiqué',
+    description: 'Major powers fail to reach agreement on core issues, signalling deepening geopolitical fractures.',
+    regions: ['northAmerica', 'europe', 'eastAsia'],
+    impact: r => ({ [r]: { influence: -6, stability: -3 } }),
+    resourceDelta: { politicalCapital: -8 },
+    approvalDelta: -3,
+  },
+  {
+    headline: 'State-sponsored disinformation network exposed and dismantled',
+    description: 'Intelligence agencies reveal a coordinated foreign operation that targeted elections and public trust for years.',
+    regions: ['europe', 'northAmerica', 'latam', 'southAsia'],
+    impact: r => ({ [r]: { stability: -5, influence: -8 } }),
+    resourceDelta: { intelligenceAssets: -4, politicalCapital: -5 },
+    approvalDelta: -4,
+  },
+  {
+    headline: 'Transboundary dam dispute pushes neighbours toward conflict',
+    description: 'Upstream construction on a shared river triggers a standoff over water rights and downstream survival.',
+    regions: ['mena', 'southAsia', 'subSaharanAfrica', 'centralAsia'],
+    impact: r => ({ [r]: { stability: -8, influence: -4, threatLevel: 10 } }),
+    approvalDelta: -3,
+    cascade: true,
+  },
+  {
+    headline: 'UN declares famine; humanitarian aid corridors blocked',
+    description: 'Acute food insecurity reaches catastrophic levels as conflict prevents access for relief organisations.',
+    regions: ['subSaharanAfrica', 'mena', 'southAsia'],
+    impact: r => ({ [r]: { stability: -14, influence: -4, threatLevel: 8 } }),
+    resourceDelta: { economicInfluence: -6, politicalCapital: -5 },
+    approvalDelta: -5,
+    cascade: true,
+  },
+  {
+    headline: 'IAEA confirms radioactive material missing from storage',
+    description: 'International regulators issue an emergency alert; origin and current whereabouts of the material are unknown.',
+    regions: ['centralAsia', 'mena', 'eastAsia'],
+    impact: r => ({ [r]: { threatLevel: 20, stability: -8 } }),
+    resourceDelta: { intelligenceAssets: -8, politicalCapital: -8 },
+    approvalDelta: -6,
+    defconDelta: -1,
+  },
+  {
+    headline: 'Catastrophic earthquake devastates densely populated coastline',
+    description: 'Thousands dead, hundreds of thousands displaced; international rescue teams mobilise.',
+    regions: ['southAsia', 'centralAsia', 'mena', 'eastAsia', 'latam'],
+    impact: r => ({ [r]: { stability: -12, influence: 3, threatLevel: 4 } }),
+    resourceDelta: { economicInfluence: -8, politicalCapital: -4 },
+    approvalDelta: 2,
+  },
+  {
+    headline: 'Mass opposition arrests signal authoritarian consolidation',
+    description: 'Hundreds of politicians, journalists, and civil society leaders detained in overnight security raids.',
+    regions: ['centralAsia', 'mena', 'eastAsia', 'subSaharanAfrica'],
+    impact: r => ({ [r]: { stability: -10, influence: -6, threatLevel: 6 } }),
+    approvalDelta: -3,
+  },
+  {
+    headline: 'Landmark multi-bloc free trade agreement enters force',
+    description: 'A newly ratified pact eliminates tariffs across a combined market of over 800 million consumers.',
+    regions: ['subSaharanAfrica', 'latam', 'southAsia', 'oceania'],
+    impact: r => ({ [r]: { stability: 6, influence: 8 } }),
+    resourceDelta: { economicInfluence: 10 },
+    approvalDelta: 3,
+  },
+  {
+    headline: 'Gas supply cutoff triggers continent-wide energy emergency',
+    description: 'Emergency rationing imposed as prices reach record highs following an abrupt and unexplained supply halt.',
+    regions: ['europe', 'eastAsia', 'southAsia'],
+    impact: r => ({ [r]: { stability: -10, influence: -4, threatLevel: 8 } }),
+    resourceDelta: { economicInfluence: -10 },
+    approvalDelta: -5,
+    cascade: true,
+  },
+  {
+    headline: 'Naval blockade imposed on critical shipping strait',
+    description: 'Warships intercept commercial traffic, disrupting global commodity flows and spiking marine insurance rates.',
+    regions: ['mena', 'eastAsia', 'southAsia'],
+    impact: r => ({ [r]: { stability: -8, threatLevel: 16, influence: -5 } }),
+    resourceDelta: { militaryReadiness: -6, economicInfluence: -8 },
+    approvalDelta: -4,
+    defconDelta: -1,
+    cascade: true,
+  },
+  {
+    headline: 'Rising power defies international court territorial ruling',
+    description: 'Government publicly rejects binding arbitration, spurring solidarity statements and sanction threats.',
+    regions: ['eastAsia', 'mena', 'europe', 'southAsia'],
+    impact: r => ({ [r]: { influence: -8, stability: -4, threatLevel: 8 } }),
+    resourceDelta: { politicalCapital: -6 },
+    approvalDelta: -3,
+    cascade: true,
+  },
+  {
+    headline: 'Ceasefire collapses; heavy fighting resumes within hours',
+    description: 'A fragile truce brokered last week disintegrates as both sides trade accusations of violations.',
+    regions: ['mena', 'subSaharanAfrica', 'centralAsia', 'southAsia'],
+    impact: r => ({ [r]: { stability: -14, threatLevel: 14, influence: -4 } }),
+    resourceDelta: { politicalCapital: -8, militaryReadiness: -6 },
+    approvalDelta: -5,
+    defconDelta: -1,
+    cascade: true,
+  },
+  {
+    headline: 'Sweeping AI regulation framework signed into international law',
+    description: 'A landmark multilateral accord restricts autonomous weapons and mandates civilian AI oversight bodies.',
+    regions: ['northAmerica', 'europe', 'eastAsia'],
+    impact: r => ({ [r]: { stability: 4, influence: 6 } }),
+    resourceDelta: { technologyLevel: 6, politicalCapital: -4 },
+    approvalDelta: 3,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -548,9 +739,12 @@ export function resolveAction(state: GameState, action: GameAction, seed?: numbe
     state.defcon = clamp(state.defcon - 1, 1, 5) as DefconLevel;
   }
 
-  // Covert ops exposure risk (Shadow President)
+  // Covert ops exposure risk (Shadow President).
+  // Higher technologyLevel reduces exposure chance: each 10 TL shaves 1% off the risk floor.
+  const techBonus = Math.floor(state.resources.technologyLevel / 10);
+  const effectiveRisk = Math.max(0, action.risk - techBonus);
   let exposureText = '';
-  if (action.category === 'covert' && rand() * 100 < action.risk) {
+  if (action.category === 'covert' && rand() * 100 < effectiveRisk) {
     // Exposed!
     state.approval = clamp(state.approval + action.approvalImpact, 0, 100);
     region.influence = clamp(region.influence - 8, -100, 100);
@@ -626,12 +820,12 @@ export function computeScore(state: GameState): number {
   const regions = Object.values(state.regions);
   const avgStability = regions.reduce((s, r) => s + r.stability, 0) / regions.length;
   const avgInfluence = regions.reduce((s, r) => s + r.influence, 0) / regions.length;
-  const resourceTotal = Object.values(state.resources).reduce((a, b) => a + b, 0);
   const objectiveBonus = state.objectives.filter(o => o.completed).length * 50;
   const approvalBonus = state.approval;
   const defconBonus = (state.defcon - 1) * 10; // DEFCON 5 = 40 pts, DEFCON 2 = 10 pts
 
-  return Math.round(avgStability + avgInfluence + resourceTotal / 5 + objectiveBonus + approvalBonus / 2 + defconBonus);
+  // Resources are intentionally excluded from score: spending them is the game.
+  return Math.round(avgStability + avgInfluence + objectiveBonus + approvalBonus / 2 + defconBonus);
 }
 
 function updateObjectives(state: GameState): void {
@@ -669,9 +863,9 @@ function actionEffects(action: GameAction, region: GameRegionState): { influence
 
   const base = baseActionEffects(action.type);
   return {
-    influence:   Math.round(base.influence * govMod),
-    stability:   Math.round(base.stability * govMod),
-    threatLevel: Math.round(base.threatLevel * (2 - govMod)), // inverse for threat
+    influence:   Math.round(base.influence   * govMod),
+    stability:   Math.round(base.stability   * govMod),
+    threatLevel: Math.round(base.threatLevel * govMod), // same direction: receptive governments respond more to all effects
   };
 }
 
@@ -679,7 +873,7 @@ function baseActionEffects(type: GameAction['type']): { influence: number; stabi
   switch (type) {
     // Diplomatic
     case 'diplomaticPraise':    return { influence:  6, stability:  2, threatLevel: -1 };
-    case 'diplomaticWarn':      return { influence: -2, stability:  0, threatLevel: -3 };
+    case 'diplomaticWarn':      return { influence: -2, stability: -4, threatLevel: -5 };
     case 'diplomaticThreaten':  return { influence: -5, stability: -2, threatLevel: -6 };
     case 'proposeTreaty':       return { influence: 15, stability:  5, threatLevel: -6 };
     case 'diplomaticSummit':    return { influence: 12, stability:  5, threatLevel: -4 };
@@ -696,8 +890,8 @@ function baseActionEffects(type: GameAction['type']): { influence: number; stabi
     // Covert
     case 'deployAgent':         return { influence:  5, stability:  2, threatLevel: -3 };
     case 'covertInfluence':     return { influence:  8, stability:  0, threatLevel: -2 };
-    case 'covertDestabilise':   return { influence: -2, stability: -12, threatLevel:  4 };
-    case 'cyberOperation':      return { influence: -2, stability: -3, threatLevel: -8 };
+    case 'covertDestabilise':   return { influence:  0, stability: -12, threatLevel:  4 };
+    case 'cyberOperation':      return { influence:  0, stability: -3, threatLevel: -8 };
     case 'fundCoup':            return { influence: 20, stability: -20, threatLevel: 10 };
     default:                    return { influence:  0, stability:  0, threatLevel:  0 };
   }
