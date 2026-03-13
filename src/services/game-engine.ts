@@ -93,7 +93,7 @@ const ADVISORS: GameAdvisor[] = [
 const OBJECTIVES: GameObjective[] = [
   { id: 'obj-stability',  description: 'Maintain average global stability above 50',   completed: false },
   { id: 'obj-influence',  description: 'Achieve positive influence in 7+ regions',     completed: false },
-  { id: 'obj-approval',   description: 'Keep domestic approval above 50 for 10+ turns', completed: false },
+  { id: 'obj-approval',   description: 'Maintain domestic approval above 50',           completed: false },
   { id: 'obj-defcon',     description: 'Never let DEFCON drop below 3',                completed: false },
   { id: 'obj-resources',  description: 'End the game with 300+ total resource points', completed: false },
 ];
@@ -618,15 +618,22 @@ export function generateTurnEvents(state: GameState, seed?: number): GameEvent[]
   const count = 1 + Math.floor(rand() * 3);
   const events: GameEvent[] = [];
 
+  const usedIndices = new Set<number>();
   for (let i = 0; i < count; i++) {
-    const tmpl = EVENT_TEMPLATES[Math.floor(rand() * EVENT_TEMPLATES.length)];
-    const region = tmpl.regions[Math.floor(rand() * tmpl.regions.length)];
+    // Pick a template not already used this turn (linear probe to avoid re-rolling the RNG).
+    let tmplIdx = Math.floor(rand() * EVENT_TEMPLATES.length);
+    while (usedIndices.has(tmplIdx)) {
+      tmplIdx = (tmplIdx + 1) % EVENT_TEMPLATES.length;
+    }
+    usedIndices.add(tmplIdx);
+    const tmpl = EVENT_TEMPLATES[tmplIdx]!;
+    const region = tmpl.regions[Math.floor(rand() * tmpl.regions.length)]!;
 
     // Build advisor briefings for this event
     const regionState = state.regions[region];
     const briefings: AdvisorBriefing[] = state.advisors.map(a => ({
       advisorId: a.id,
-      text: ADVISOR_TEMPLATES[a.id]({ ...placeholderEvent(state.turn, i, tmpl, region), defconDelta: tmpl.defconDelta }, regionState),
+      text: ADVISOR_TEMPLATES[a.id](placeholderEvent(state.turn, i, tmpl, region), regionState),
     }));
 
     events.push({
@@ -643,6 +650,22 @@ export function generateTurnEvents(state: GameState, seed?: number): GameEvent[]
     });
   }
   return events;
+}
+
+/**
+ * Attach advisor briefings to any events that don't already have them.
+ * Call this on AI-generated events so the Advisory Cabinet is always populated.
+ */
+export function attachAdvisorBriefings(state: GameState, events: GameEvent[]): void {
+  for (const evt of events) {
+    if (evt.advisorBriefings?.length) continue;
+    const regionState = state.regions[evt.region];
+    if (!regionState) continue;
+    evt.advisorBriefings = state.advisors.map(a => ({
+      advisorId: a.id,
+      text: ADVISOR_TEMPLATES[a.id](evt, regionState),
+    }));
+  }
 }
 
 /** Lightweight event stub used during briefing generation. */
@@ -714,7 +737,8 @@ export function applyEvents(state: GameState, events: GameEvent[]): GameState {
  * Resolve a player action.
  */
 export function resolveAction(state: GameState, action: GameAction, seed?: number): GameEvent {
-  const rand = xorshift32(seed ?? state.turn * 7919 + 13);
+  const actionIdx = state.log.filter(e => e.id.startsWith('act-')).length;
+  const rand = xorshift32(seed ?? state.turn * 7919 + actionIdx * 31 + 13);
 
   // Deduct costs
   for (const [k, v] of Object.entries(action.cost) as [keyof GameResources, number][]) {
@@ -763,7 +787,7 @@ export function resolveAction(state: GameState, action: GameAction, seed?: numbe
   }
 
   const evt: GameEvent = {
-    id: `act-${state.turn}`,
+    id: `act-${state.turn}-${actionIdx}`,
     turn: state.turn,
     headline: `Action: ${action.label}`,
     description: action.description + exposureText,

@@ -17,6 +17,7 @@ import { h } from '@/utils/dom-utils';
 import {
   createInitialState,
   generateTurnEvents,
+  attachAdvisorBriefings,
   applyEvents,
   resolveAction,
   advancePhase,
@@ -166,6 +167,7 @@ export class GameHudPanel extends Panel {
     if (myId !== this.briefingGenId) return; // a newer briefing superseded this one
 
     this.pendingEvents = events?.length ? events : generateTurnEvents(this.state);
+    attachAdvisorBriefings(this.state, this.pendingEvents);
     applyEvents(this.state, this.pendingEvents);
     this.state.score = computeScore(this.state);
     this.render();
@@ -222,15 +224,21 @@ export class GameHudPanel extends Panel {
     // Approval (Shadow President)
     const ap = this.state.approval;
     const apClr = ap > 50 ? '#44ff88' : ap > 25 ? '#ffcc44' : '#ff5555';
-    const apWarning = ap < 25 ? `<span style="color:#ff5555;font-size:0.8em;margin-left:6px">⚠️ ${ap < 15 ? 'IMPEACHED' : 'IMPEACHMENT RISK'}</span>` : '';
-    this.approvalEl.innerHTML = `Approval: <b style="color:${apClr}">${ap}%</b>${apWarning}`;
+    this.approvalEl.replaceChildren(
+      'Approval: ',
+      h('b', { style: `color:${apClr}` }, `${ap}%`),
+      ...(ap < 25 ? [h('span', { style: 'color:#ff5555;font-size:0.8em;margin-left:6px' },
+        `⚠️ ${ap < 15 ? 'IMPEACHED' : 'IMPEACHMENT RISK'}`)] : []),
+    );
 
     // DEFCON (Shadow President)
     const dcClr = DEFCON_COLORS[this.state.defcon] ?? '#ff3333';
     const dcLabel = DEFCON_LABELS[this.state.defcon] ?? '';
-    this.defconEl.innerHTML =
-      `DEFCON: <b style="color:${dcClr};padding:1px 5px;background:${dcClr}22;border-radius:3px">${this.state.defcon}</b>` +
-      `<span style="opacity:0.7;font-size:0.9em"> — ${dcLabel}</span>`;
+    this.defconEl.replaceChildren(
+      'DEFCON: ',
+      h('b', { style: `color:${dcClr};padding:1px 5px;background:${dcClr}22;border-radius:3px` }, String(this.state.defcon)),
+      h('span', { style: 'opacity:0.7;font-size:0.9em' }, ` — ${dcLabel}`),
+    );
 
     // Resources with progress bars
     this.resourcesEl.innerHTML = '';
@@ -295,7 +303,15 @@ export class GameHudPanel extends Panel {
     const keys: (keyof GameBudget)[] = ['defense', 'intelligence', 'diplomacy', 'economy', 'technology'];
     const currentTotal = keys.reduce((s, k) => s + this.state.budget[k], 0);
     const totalEl = h('span', { style: `font-weight:600;color:${currentTotal === 100 ? '#44ff88' : '#ff5555'}` }, `${currentTotal}/100`);
-    const header = h('div', { style: 'font-weight:600;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center' }, 'Budget Allocation', totalEl);
+
+    const balanceBtn = h('button', {
+      style: 'font-size:0.75em;padding:1px 6px;border-radius:3px;cursor:pointer;background:var(--panel-bg,#1a1a2e);border:1px solid var(--border,#333);color:inherit',
+      title: 'Scale current allocation proportionally to sum to 100',
+      'aria-label': 'Balance budget to 100',
+    }, 'Balance');
+
+    const header = h('div', { style: 'font-weight:600;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;gap:6px' },
+      'Budget Allocation', totalEl, balanceBtn);
     this.budgetEl.appendChild(header);
 
     const labels: Record<keyof GameBudget, string> = {
@@ -309,10 +325,18 @@ export class GameHudPanel extends Panel {
 
     const grid = h('div', { style: 'display:grid;grid-template-columns:auto 50px 1fr;gap:2px 8px;align-items:center' });
     const inputs: Record<string, HTMLInputElement> = {};
+    const valSpans: Record<string, HTMLElement> = {};
+
+    const syncTotal = () => {
+      const newTotal = this.tryApplyBudget(keys, inputs);
+      totalEl.textContent = `${newTotal}/100`;
+      totalEl.style.color = newTotal === 100 ? '#44ff88' : '#ff5555';
+    };
 
     for (const key of keys) {
       const lbl = h('span', null, labels[key]);
       const valSpan = h('span', { style: 'font-weight:600;text-align:right' }, String(this.state.budget[key]));
+      valSpans[key] = valSpan;
       const slider = document.createElement('input');
       slider.type = 'range';
       slider.min = '0';
@@ -324,13 +348,34 @@ export class GameHudPanel extends Panel {
 
       slider.addEventListener('input', () => {
         valSpan.textContent = slider.value;
-        const newTotal = this.tryApplyBudget(keys, inputs);
-        totalEl.textContent = `${newTotal}/100`;
-        totalEl.style.color = newTotal === 100 ? '#44ff88' : '#ff5555';
+        syncTotal();
       });
 
       grid.append(lbl, valSpan, slider);
     }
+
+    balanceBtn.addEventListener('click', () => {
+      // Proportional rescale: scale current values so they sum to 100.
+      // If all sliders are zero, distribute evenly.
+      const raw = keys.map(k => parseInt(inputs[k]!.value, 10) || 0);
+      const rawTotal = raw.reduce((a, b) => a + b, 0);
+      const scaled = rawTotal > 0
+        ? raw.map(v => Math.min(60, Math.max(0, Math.round(v * 100 / rawTotal))))
+        : keys.map(() => 20);
+      // Absorb rounding remainder on the largest bucket.
+      const scaledTotal = scaled.reduce((a, b) => a + b, 0);
+      const diff = 100 - scaledTotal;
+      if (diff !== 0) {
+        const maxIdx = scaled.reduce((mi, v, i) => (scaled[i]! > scaled[mi]! ? i : mi), 0);
+        scaled[maxIdx] = Math.min(60, Math.max(0, scaled[maxIdx]! + diff));
+      }
+      keys.forEach((k, i) => {
+        inputs[k]!.value = String(scaled[i]);
+        valSpans[k]!.textContent = String(scaled[i]);
+      });
+      syncTotal();
+    });
+
     this.budgetEl.appendChild(grid);
   }
 
