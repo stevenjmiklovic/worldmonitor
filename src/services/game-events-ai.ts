@@ -73,7 +73,7 @@ export async function generateEventsFromNews(
 
     if (resp.fallback || !resp.events.length) return null;
 
-    return resp.events.map((e: GeneratedGameEventResponse, i: number): GameEvent => {
+    return resp.events.map((e, i): GameEvent => {
       const region = (VALID_REGIONS.has(e.region as GameRegionId)
         ? e.region
         : 'mena') as GameRegionId;
