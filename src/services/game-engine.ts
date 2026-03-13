@@ -467,19 +467,19 @@ const EVENT_TEMPLATES: EventTemplate[] = [
 // ---------------------------------------------------------------------------
 
 const ADVISOR_TEMPLATES: Record<GameAdvisorId, (evt: GameEvent, region: GameRegionState) => string> = {
-  secState: (evt, region) =>
+  secState: (_evt, region) =>
     `Secretary Whitfield: "The situation in ${region.name} calls for measured diplomacy. ` +
     `${region.stability < 40 ? 'Instability is critical — we must engage multilaterally.' : 'We should reinforce our partnerships.'} ` +
     `I recommend a diplomatic initiative rather than escalation."`,
-  secDef: (evt, region) =>
+  secDef: (_evt, region) =>
     `General Kane: "${region.name} is ${region.threatLevel > 50 ? 'a serious threat vector' : 'relatively contained'}. ` +
     `${region.troopsDeployed ? 'Our forces on the ground give us leverage.' : 'We have no forward presence — consider deployment.'} ` +
     `Strength deters aggression."`,
-  ciaDirector: (evt, region) =>
+  ciaDirector: (_evt, region) =>
     `Dr. Voss: "Our assets in ${region.name} report ${region.stability < 40 ? 'growing unrest and power vacuums' : 'stable conditions'}. ` +
     `${region.influence < 0 ? 'Covert influence campaigns could shift sentiment in our favour.' : 'We should protect our existing networks.'} ` +
     `Discretion is advised — exposure would be costly."`,
-  econAdvisor: (evt, region) =>
+  econAdvisor: (_evt, region) =>
     `Nakamura: "${region.name}'s economy is ${region.stability > 60 ? 'healthy enough for trade expansion' : 'fragile — aid could buy goodwill'}. ` +
     `${region.sanctioned ? 'Current sanctions are biting; consider whether to maintain pressure.' : 'Economic engagement is more productive than isolation.'}"`,
   jointChiefs: (evt, region) =>

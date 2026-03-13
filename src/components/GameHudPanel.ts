@@ -366,7 +366,7 @@ export class GameHudPanel extends Panel {
       const scaledTotal = scaled.reduce((a, b) => a + b, 0);
       const diff = 100 - scaledTotal;
       if (diff !== 0) {
-        const maxIdx = scaled.reduce((mi, v, i) => (scaled[i]! > scaled[mi]! ? i : mi), 0);
+        const maxIdx = scaled.reduce((mi, _v, i) => (scaled[i]! > scaled[mi]! ? i : mi), 0);
         scaled[maxIdx] = Math.min(60, Math.max(0, scaled[maxIdx]! + diff));
       }
       keys.forEach((k, i) => {

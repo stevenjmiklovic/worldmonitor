@@ -1,34 +1,42 @@
 /**
  * AI-driven game event generation.
  *
- * Calls the GenerateGameEvents RPC with recent news headlines and maps the
+ * Calls the GenerateGameEvents endpoint with recent news headlines and maps the
  * server response into GameEvent objects that the engine can apply directly.
  * All values are clamped to safe ranges so the engine's invariants hold even
  * if the LLM returns unexpected numbers.
+ *
+ * Uses a direct fetch call because the GenerateGameEvents RPC is not yet part
+ * of the proto service definition (will be added in a follow-up).
  *
  * Returns null on any error so callers can fall back to template-based
  * event generation without crashing.
  */
 
-import { IntelligenceServiceClient } from '@/generated/client/worldmonitor/intelligence/v1/service_client';
 import { getApiBaseUrl } from './runtime';
 import type { GameState, GameEvent, GameRegionId } from '@/types';
+
+interface GeneratedGameEventResponse {
+  headline: string;
+  description: string;
+  region: string;
+  stabilityDelta: number;
+  influenceDelta: number;
+  threatDelta: number;
+  approvalDelta: number;
+  defconDelta: number;
+}
+
+interface GenerateGameEventsResponse {
+  events: GeneratedGameEventResponse[];
+  provider: string;
+  fallback: boolean;
+}
 
 const VALID_REGIONS = new Set<GameRegionId>([
   'northAmerica', 'europe', 'eastAsia', 'southAsia',
   'mena', 'subSaharanAfrica', 'latam', 'centralAsia', 'oceania',
 ]);
-
-let _client: IntelligenceServiceClient | null = null;
-
-function getClient(): IntelligenceServiceClient {
-  if (!_client) {
-    _client = new IntelligenceServiceClient(getApiBaseUrl(), {
-      fetch: (...args) => globalThis.fetch(...args),
-    });
-  }
-  return _client;
-}
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, Math.round(n) || 0));
@@ -51,14 +59,21 @@ export async function generateEventsFromNews(
   const count = 1 + Math.floor(Math.random() * 3);
 
   try {
-    const resp = await getClient().generateGameEvents(
-      { headlines: headlines.slice(0, 10), turn: state.turn, count },
-      { signal: AbortSignal.timeout(12_000) },
-    );
+    const url = `${getApiBaseUrl()}/api/intelligence/v1/generate-game-events`;
+    const res = await globalThis.fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ headlines: headlines.slice(0, 10), turn: state.turn, count }),
+      signal: AbortSignal.timeout(12_000),
+    });
+
+    if (!res.ok) return null;
+
+    const resp = (await res.json()) as GenerateGameEventsResponse;
 
     if (resp.fallback || !resp.events.length) return null;
 
-    return resp.events.map((e, i): GameEvent => {
+    return resp.events.map((e: GeneratedGameEventResponse, i: number): GameEvent => {
       const region = (VALID_REGIONS.has(e.region as GameRegionId)
         ? e.region
         : 'mena') as GameRegionId;
