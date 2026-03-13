@@ -27,6 +27,7 @@ const BOOTSTRAP_KEYS = {
   ucdpEvents:        'conflict:ucdp-events:v1',
   weatherAlerts:     'weather:alerts:v1',
   spending:          'economic:spending:v1',
+  techEvents:        'research:tech-events-bootstrap:v1',
 };
 
 const STANDALONE_KEYS = {
@@ -48,7 +49,7 @@ const STANDALONE_KEYS = {
   usniFleetStale:        'usni-fleet:sebuf:stale:v1',
   faaDelays:             'aviation:delays:faa:v1',
   intlDelays:            'aviation:delays:intl:v3',
-  notamClosures:         'aviation:notam:closures:v1',
+  notamClosures:         'aviation:notam:closures:v2',
   positiveEventsLive:    'positive-events:geo:v1',
   cableHealth:           'cable-health-v1',
   cyberThreatsRpc:       'cyber:threats:v2',
@@ -72,7 +73,8 @@ const SEED_META = {
   gulfQuotes:       { key: 'seed-meta:market:gulf-quotes',      maxStaleMin: 30 },
   stablecoinMarkets:{ key: 'seed-meta:market:stablecoins',      maxStaleMin: 60 },
   naturalEvents:    { key: 'seed-meta:natural:events',          maxStaleMin: 120 },
-  flightDelays:     { key: 'seed-meta:aviation:faa',            maxStaleMin: 90 },
+  flightDelays:     { key: 'seed-meta:aviation:faa',            maxStaleMin: 60 },
+  notamClosures:    { key: 'seed-meta:aviation:notam',          maxStaleMin: 90 },
   predictions:      { key: 'seed-meta:prediction:markets',      maxStaleMin: 15 },
   insights:         { key: 'seed-meta:news:insights',           maxStaleMin: 30 },
   marketQuotes:     { key: 'seed-meta:market:stocks',         maxStaleMin: 30 },
@@ -90,17 +92,21 @@ const SEED_META = {
   gpsjam:           { key: 'seed-meta:intelligence:gpsjam',       maxStaleMin: 720 },
   cableHealth:      { key: 'seed-meta:cable-health',              maxStaleMin: 60 },
   positiveGeoEvents:{ key: 'seed-meta:positive-events:geo',       maxStaleMin: 60 },
-  riskScores:       { key: 'seed-meta:risk:scores',               maxStaleMin: 30 },
+  riskScores:       { key: 'seed-meta:risk:scores:sebuf',          maxStaleMin: 30 },
   iranEvents:       { key: 'seed-meta:conflict:iran-events',      maxStaleMin: 10080 },
   ucdpEvents:       { key: 'seed-meta:conflict:ucdp-events',      maxStaleMin: 420 },
   militaryFlights:  { key: 'seed-meta:military:flights',           maxStaleMin: 15 },
   satellites:       { key: 'seed-meta:intelligence:satellites',    maxStaleMin: 180 },
   weatherAlerts:    { key: 'seed-meta:weather:alerts',             maxStaleMin: 30 },
   spending:         { key: 'seed-meta:economic:spending',          maxStaleMin: 120 },
+  techEvents:       { key: 'seed-meta:research:tech-events',       maxStaleMin: 420 },
   sectors:          { key: 'seed-meta:market:sectors',             maxStaleMin: 30 },
   techReadiness:    { key: 'seed-meta:economic:worldbank-techreadiness:v1', maxStaleMin: 10080 },
   progressData:     { key: 'seed-meta:economic:worldbank-progress:v1',     maxStaleMin: 10080 },
   renewableEnergy:  { key: 'seed-meta:economic:worldbank-renewable:v1',    maxStaleMin: 10080 },
+  intlDelays:       { key: 'seed-meta:aviation:intl',           maxStaleMin: 90 },
+  faaDelays:        { key: 'seed-meta:aviation:faa',            maxStaleMin: 60 },
+  theaterPosture:   { key: 'seed-meta:theater-posture',         maxStaleMin: 30 },
 };
 
 // Standalone keys that are populated on-demand by RPC handlers (not seeds).
@@ -112,6 +118,10 @@ const ON_DEMAND_KEYS = new Set([
   'macroSignals', 'shippingRates', 'chokepoints', 'minerals', 'giving',
   'cyberThreatsRpc', 'militaryBases', 'temporalAnomalies', 'displacement',
 ]);
+
+// Keys where 0 records is a valid healthy state (e.g. no airports closed).
+// The key must still exist in Redis; only the record count can be 0.
+const EMPTY_DATA_OK_KEYS = new Set(['notamClosures']);
 
 // Cascade groups: if any key in the group has data, all empty siblings are OK.
 // Theater posture uses live → stale → backup fallback chain.
@@ -154,7 +164,8 @@ function dataSize(parsed) {
                       'papers', 'repos', 'articles', 'signals', 'rates', 'countries',
                       'chokepoints', 'minerals', 'anomalies', 'flows', 'bases', 'flights',
                       'theaters', 'fleets', 'warnings', 'closures', 'cables',
-                      'airports', 'categories', 'regions', 'entries', 'satellites']) {
+                      'airports', 'closedIcaos', 'categories', 'regions', 'entries', 'satellites',
+                      'sectors', 'statuses', 'scores']) {
       if (Array.isArray(parsed[k])) return parsed[k].length;
     }
     return Object.keys(parsed).length;
@@ -240,7 +251,7 @@ export default async function handler(req) {
       okCount++;
     }
 
-    const entry = { status, redisKey, records: size };
+    const entry = { status, records: size };
     if (seedAge !== null) entry.seedAgeMin = seedAge;
     if (seedCfg) entry.maxStaleMin = seedCfg.maxStaleMin;
     checks[name] = entry;
@@ -291,6 +302,9 @@ export default async function handler(req) {
       if (cascadeCovered) {
         status = 'OK_CASCADE';
         okCount++;
+      } else if (EMPTY_DATA_OK_KEYS.has(name) && seedStale === false) {
+        status = 'OK';
+        okCount++;
       } else if (isOnDemand) {
         status = 'EMPTY_ON_DEMAND';
         warnCount++;
@@ -301,6 +315,9 @@ export default async function handler(req) {
     } else if (size === 0) {
       if (cascadeCovered) {
         status = 'OK_CASCADE';
+        okCount++;
+      } else if (EMPTY_DATA_OK_KEYS.has(name)) {
+        status = 'OK';
         okCount++;
       } else if (isOnDemand) {
         status = 'EMPTY_ON_DEMAND';
@@ -317,19 +334,23 @@ export default async function handler(req) {
       okCount++;
     }
 
-    const entry = { status, redisKey, records: size };
+    const entry = { status, records: size };
     if (seedAge !== null) entry.seedAgeMin = seedAge;
     if (seedCfg) entry.maxStaleMin = seedCfg.maxStaleMin;
     checks[name] = entry;
   }
 
+  // On-demand keys that simply haven't been requested yet should not affect overall status.
+  const onDemandWarnCount = Object.values(checks).filter(c => c.status === 'EMPTY_ON_DEMAND').length;
+  const realWarnCount = warnCount - onDemandWarnCount;
+
   let overall;
-  if (critCount === 0 && warnCount === 0) overall = 'HEALTHY';
-  else if (critCount === 0) overall = 'DEGRADED';
+  if (critCount === 0 && realWarnCount === 0) overall = 'HEALTHY';
+  else if (critCount === 0) overall = 'WARNING';
   else if (critCount <= 3) overall = 'DEGRADED';
   else overall = 'UNHEALTHY';
 
-  const httpStatus = overall === 'HEALTHY' ? 200 : overall === 'DEGRADED' ? 200 : 503;
+  const httpStatus = overall === 'HEALTHY' || overall === 'WARNING' ? 200 : 503;
 
   const url = new URL(req.url);
   const compact = url.searchParams.get('compact') === '1';
@@ -350,7 +371,7 @@ export default async function handler(req) {
   } else {
     const problems = {};
     for (const [name, check] of Object.entries(checks)) {
-      if (check.status !== 'OK') problems[name] = check;
+      if (check.status !== 'OK' && check.status !== 'OK_CASCADE') problems[name] = check;
     }
     if (Object.keys(problems).length > 0) body.problems = problems;
   }

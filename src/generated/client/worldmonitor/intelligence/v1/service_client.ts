@@ -150,27 +150,21 @@ export interface DeductSituationResponse {
   provider: string;
 }
 
-export interface GenerateGameEventsRequest {
-  headlines: string[];
-  turn: number;
-  count: number;
+export interface GetCountryFactsRequest {
+  countryCode: string;
 }
 
-export interface GeneratedGameEvent {
-  headline: string;
-  description: string;
-  region: string;
-  stabilityDelta: number;
-  influenceDelta: number;
-  threatDelta: number;
-  approvalDelta: number;
-  defconDelta: number;
-}
-
-export interface GenerateGameEventsResponse {
-  events: GeneratedGameEvent[];
-  provider: string;
-  fallback: boolean;
+export interface GetCountryFactsResponse {
+  headOfState: string;
+  headOfStateTitle: string;
+  wikipediaSummary: string;
+  wikipediaThumbnailUrl: string;
+  population: number;
+  capital: string;
+  languages: string[];
+  currencies: string[];
+  areaSqKm: number;
+  countryName: string;
 }
 
 export type SeverityLevel = "SEVERITY_LEVEL_UNSPECIFIED" | "SEVERITY_LEVEL_LOW" | "SEVERITY_LEVEL_MEDIUM" | "SEVERITY_LEVEL_HIGH";
@@ -383,8 +377,11 @@ export class IntelligenceServiceClient {
     return await resp.json() as DeductSituationResponse;
   }
 
-  async generateGameEvents(req: GenerateGameEventsRequest, options?: IntelligenceServiceCallOptions): Promise<GenerateGameEventsResponse> {
-    const url = this.baseURL + "/api/intelligence/v1/generate-game-events";
+  async getCountryFacts(req: GetCountryFactsRequest, options?: IntelligenceServiceCallOptions): Promise<GetCountryFactsResponse> {
+    let path = "/api/intelligence/v1/get-country-facts";
+    const params = new URLSearchParams();
+    if (req.countryCode != null && req.countryCode !== "") params.set("country_code", String(req.countryCode));
+    const url = this.baseURL + path + (params.toString() ? "?" + params.toString() : "");
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -393,9 +390,8 @@ export class IntelligenceServiceClient {
     };
 
     const resp = await this.fetchFn(url, {
-      method: "POST",
+      method: "GET",
       headers,
-      body: JSON.stringify(req),
       signal: options?.signal,
     });
 
@@ -403,7 +399,7 @@ export class IntelligenceServiceClient {
       return this.handleError(resp);
     }
 
-    return await resp.json() as GenerateGameEventsResponse;
+    return await resp.json() as GetCountryFactsResponse;
   }
 
   private async handleError(resp: Response): Promise<never> {

@@ -13,7 +13,7 @@ import type { CountryTimeline } from '@/components/CountryTimeline';
 import type { PlaybackControl } from '@/components';
 import type { ExportPanel } from '@/utils';
 import type { UnifiedSettings } from '@/components/UnifiedSettings';
-import type { PizzIntIndicator } from '@/components';
+import type { PizzIntIndicator, LlmStatusIndicator } from '@/components';
 import type { ParsedMapUrlState } from '@/utils';
 import type { PositiveNewsFeedPanel } from '@/components/PositiveNewsFeedPanel';
 import type { CountersPanel } from '@/components/CountersPanel';
@@ -28,6 +28,7 @@ import type { BreakingNewsBanner } from '@/components/BreakingNewsBanner';
 import type { GameHudPanel } from '@/components/GameHudPanel';
 import type { GameBriefingPanel } from '@/components/GameBriefingPanel';
 import type { GameLogPanel } from '@/components/GameLogPanel';
+import type { CorrelationEngine } from '@/services/correlation-engine';
 
 export interface CountryBriefSignals {
   criticalNews: number;
@@ -64,6 +65,7 @@ export interface IntelligenceCache {
   iranEvents?: IranEvent[];
   orefAlerts?: { alertCount: number; historyCount24h: number };
   advisories?: SecurityAdvisory[];
+  imageryScenes?: Array<{ id: string; satellite: string; datetime: string; resolutionM: number; mode: string; geometryGeojson: string; previewUrl: string; assetUrl: string }>;
 }
 
 export interface AppModule {
@@ -107,6 +109,8 @@ export interface AppContext {
   exportPanel: ExportPanel | null;
   unifiedSettings: UnifiedSettings | null;
   pizzintIndicator: PizzIntIndicator | null;
+  correlationEngine: CorrelationEngine | null;
+  llmStatusIndicator: LlmStatusIndicator | null;
   countryBriefPage: CountryBriefPanel | null;
   countryTimeline: CountryTimeline | null;
 

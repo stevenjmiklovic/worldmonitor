@@ -553,7 +553,7 @@ export interface MapLayers {
   iranAttacks: boolean;
   // GPS/GNSS interference layer
   gpsJamming: boolean;
-  // Satellite orbital tracking
+  // Satellite orbital tracking + imagery footprints
   satellites: boolean;
 
   // CII choropleth layer
@@ -819,6 +819,7 @@ export interface MilitaryVessel {
   note?: string;
   usniRegion?: string;
   usniDeploymentStatus?: USNIDeploymentStatus;
+  usniHomePort?: string;
   usniStrikeGroup?: string;
   usniActivityDescription?: string;
   usniArticleUrl?: string;
@@ -953,6 +954,21 @@ export const NATURAL_EVENT_CATEGORIES: ReadonlySet<NaturalEventCategory> = new S
   'drought', 'dustHaze', 'snow', 'tempExtremes', 'seaLakeIce', 'waterColor', 'manmade',
 ]);
 
+export interface ForecastPoint {
+  lat: number;
+  lon: number;
+  hour: number;
+  windKt: number;
+  category: number;
+}
+
+export interface PastTrackPoint {
+  lat: number;
+  lon: number;
+  windKt: number;
+  timestamp: number;
+}
+
 export interface NaturalEvent {
   id: string;
   title: string;
@@ -967,6 +983,18 @@ export interface NaturalEvent {
   sourceUrl?: string;
   sourceName?: string;
   closed: boolean;
+  stormId?: string;
+  stormName?: string;
+  basin?: string;
+  stormCategory?: number;
+  classification?: string;
+  windKt?: number;
+  pressureMb?: number;
+  movementDir?: number;
+  movementSpeedKt?: number;
+  forecastTrack?: ForecastPoint[];
+  conePolygon?: number[][][];
+  pastTrack?: PastTrackPoint[];
 }
 
 // Infrastructure Cascade Types

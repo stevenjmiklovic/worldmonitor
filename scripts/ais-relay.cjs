@@ -188,6 +188,34 @@ function upstashSet(key, value, ttlSeconds) {
   });
 }
 
+function upstashExpire(key, ttlSeconds) {
+  return new Promise((resolve) => {
+    if (!UPSTASH_ENABLED) return resolve(false);
+    const url = new URL('/', UPSTASH_REDIS_REST_URL);
+    const body = JSON.stringify(['EXPIRE', key, String(ttlSeconds)]);
+    const req = https.request(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 5000,
+    }, (resp) => {
+      let data = '';
+      resp.on('data', (chunk) => { data += chunk; });
+      resp.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          resolve(parsed?.result === 1);
+        } catch { resolve(false); }
+      });
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end(body);
+  });
+}
+
 function upstashMGet(keys) {
   return new Promise((resolve) => {
     if (!UPSTASH_ENABLED || keys.length === 0) return resolve([]);
@@ -1575,8 +1603,8 @@ async function startMarketDataSeedLoop() {
 // so Vercel handler serves from cache (avoids 114 API calls per miss)
 // ─────────────────────────────────────────────────────────────
 const AVIATIONSTACK_API_KEY = process.env.AVIATIONSTACK_API || '';
-const AVIATION_SEED_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1h
-const AVIATION_SEED_TTL = 14400; // 4h — survives 1 missed cycle
+const AVIATION_SEED_INTERVAL_MS = 30 * 60 * 1000; // 30min
+const AVIATION_SEED_TTL = 3600; // 1h — survives 1 missed cycle
 const AVIATION_REDIS_KEY = 'aviation:delays:intl:v3';
 const AVIATION_BATCH_CONCURRENCY = 10;
 const AVIATION_MIN_FLIGHTS_FOR_CLOSURE = 10;
@@ -1778,7 +1806,7 @@ function aviationAggregateFlights(iata, flights) {
     cancelledFlights: cancelled,
     totalFlights: total,
     reason,
-    source: 'FLIGHT_DELAY_SOURCE_COMPUTED',
+    source: 'FLIGHT_DELAY_SOURCE_AVIATIONSTACK',
     updatedAt: Date.now(),
   };
 }
@@ -1820,6 +1848,7 @@ async function seedAviationDelays() {
   }
 
   const ok = await upstashSet(AVIATION_REDIS_KEY, { alerts }, AVIATION_SEED_TTL);
+  await upstashSet('seed-meta:aviation:intl', { fetchedAt: Date.now(), recordCount: alerts.length }, 604800);
   console.log(`[Aviation] Seeded ${alerts.length} alerts (${succeeded} ok, ${failed} failed, redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
@@ -1837,6 +1866,131 @@ async function startAviationSeedLoop() {
   setInterval(() => {
     seedAviationDelays().catch((e) => console.warn('[Aviation] Seed error:', e?.message || e));
   }, AVIATION_SEED_INTERVAL_MS).unref?.();
+}
+
+// ─────────────────────────────────────────────────────────────
+// NOTAM Closures Seed — Railway fetches ICAO NOTAMs → writes to Redis
+// so Vercel handler and map layer serve from cache (ICAO API times out from edge)
+// ─────────────────────────────────────────────────────────────
+const NOTAM_SEED_INTERVAL_MS = 30 * 60 * 1000; // 30min
+const NOTAM_SEED_TTL = 3600; // 1h — survives 1 missed cycle
+const NOTAM_REDIS_KEY = 'aviation:notam:closures:v2';
+const NOTAM_CLOSURE_QCODES = new Set(['FA', 'AH', 'AL', 'AW', 'AC', 'AM']);
+const NOTAM_MONITORED_ICAO = [
+  // MENA
+  'OEJN', 'OERK', 'OEMA', 'OEDF', 'OMDB', 'OMAA', 'OMSJ',
+  'OTHH', 'OBBI', 'OOMS', 'OKBK', 'OLBA', 'OJAI', 'OSDI',
+  'ORBI', 'OIIE', 'OISS', 'OIMM', 'OIKB', 'HECA', 'GMMN',
+  'DTTA', 'DAAG', 'HLLT',
+  // Europe
+  'EGLL', 'LFPG', 'EDDF', 'EHAM', 'LEMD', 'LIRF', 'LTFM',
+  'LSZH', 'LOWW', 'EKCH', 'ENGM', 'ESSA', 'EFHK', 'EPWA',
+  // Americas
+  'KJFK', 'KLAX', 'KORD', 'KATL', 'KDFW', 'KDEN', 'KSFO',
+  'CYYZ', 'MMMX', 'SBGR', 'SCEL', 'SKBO',
+  // APAC
+  'RJTT', 'RKSI', 'VHHH', 'WSSS', 'VTBS', 'VIDP', 'YSSY',
+  'ZBAA', 'ZPPP', 'WMKK',
+  // Africa
+  'FAOR', 'DNMM', 'HKJK', 'GABS',
+];
+
+function fetchIcaoNotams() {
+  return new Promise((resolve) => {
+    if (!ICAO_API_KEY) return resolve([]);
+    const locations = NOTAM_MONITORED_ICAO.join(',');
+    const apiUrl = `https://dataservices.icao.int/api/notams-realtime-list?api_key=${ICAO_API_KEY}&format=json&locations=${locations}`;
+    const req = https.get(apiUrl, {
+      headers: { 'User-Agent': CHROME_UA },
+      timeout: 30000,
+    }, (resp) => {
+      if (resp.statusCode !== 200) {
+        console.warn(`[NOTAM-Seed] ICAO HTTP ${resp.statusCode}`);
+        resp.resume();
+        return resolve([]);
+      }
+      const ct = resp.headers['content-type'] || '';
+      if (ct.includes('text/html')) {
+        console.warn('[NOTAM-Seed] ICAO returned HTML (challenge page)');
+        resp.resume();
+        return resolve([]);
+      }
+      const chunks = [];
+      resp.on('data', (c) => chunks.push(c));
+      resp.on('end', () => {
+        try {
+          const data = JSON.parse(Buffer.concat(chunks).toString());
+          resolve(Array.isArray(data) ? data : []);
+        } catch {
+          console.warn('[NOTAM-Seed] Invalid JSON from ICAO');
+          resolve([]);
+        }
+      });
+    });
+    req.on('error', (err) => { console.warn(`[NOTAM-Seed] Fetch error: ${err.message}`); resolve([]); });
+    req.on('timeout', () => { req.destroy(); console.warn('[NOTAM-Seed] Timeout (30s)'); resolve([]); });
+  });
+}
+
+async function seedNotamClosures() {
+  if (!ICAO_API_KEY) {
+    console.log('[NOTAM-Seed] No ICAO_API_KEY — skipping');
+    return;
+  }
+
+  const t0 = Date.now();
+  const notams = await fetchIcaoNotams();
+  if (notams.length === 0) {
+    await upstashExpire(NOTAM_REDIS_KEY, NOTAM_SEED_TTL);
+    await upstashSet('seed-meta:aviation:notam', { fetchedAt: Date.now(), recordCount: 0 }, 604800);
+    console.log('[NOTAM-Seed] No NOTAMs received — refreshed data key TTL, preserving existing cache');
+    return;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const closedSet = new Set();
+  const reasons = {};
+
+  for (const n of notams) {
+    const icao = n.itema || n.location || '';
+    if (!icao || !NOTAM_MONITORED_ICAO.includes(icao)) continue;
+    if (n.endvalidity && n.endvalidity < now) continue;
+
+    const code23 = (n.code23 || '').toUpperCase();
+    const code45 = (n.code45 || '').toUpperCase();
+    const text = (n.iteme || '').toUpperCase();
+    const isClosureCode = NOTAM_CLOSURE_QCODES.has(code23) &&
+      (code45 === 'LC' || code45 === 'AS' || code45 === 'AU' || code45 === 'XX' || code45 === 'AW');
+    const isClosureText = /\b(AD CLSD|AIRPORT CLOSED|AIRSPACE CLOSED|AD NOT AVBL|CLSD TO ALL)\b/.test(text);
+
+    if (isClosureCode || isClosureText) {
+      closedSet.add(icao);
+      reasons[icao] = n.iteme || 'Airport closure (NOTAM)';
+    }
+  }
+
+  const closedIcaos = [...closedSet];
+  const payload = { closedIcaos, reasons };
+  const ok = await upstashSet(NOTAM_REDIS_KEY, payload, NOTAM_SEED_TTL);
+  await upstashSet('seed-meta:aviation:notam', { fetchedAt: Date.now(), recordCount: closedIcaos.length }, 604800);
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(`[NOTAM-Seed] ${notams.length} raw NOTAMs, ${closedIcaos.length} closures (redis: ${ok ? 'OK' : 'FAIL'}) in ${elapsed}s`);
+}
+
+function startNotamSeedLoop() {
+  if (!UPSTASH_ENABLED) {
+    console.log('[NOTAM-Seed] Disabled (no Upstash Redis)');
+    return;
+  }
+  if (!ICAO_API_KEY) {
+    console.log('[NOTAM-Seed] Disabled (no ICAO_API_KEY)');
+    return;
+  }
+  console.log(`[NOTAM-Seed] Seed loop starting (interval ${NOTAM_SEED_INTERVAL_MS / 1000 / 60}min, airports: ${NOTAM_MONITORED_ICAO.length})`);
+  seedNotamClosures().catch((e) => console.warn('[NOTAM-Seed] Initial seed error:', e?.message || e));
+  setInterval(() => {
+    seedNotamClosures().catch((e) => console.warn('[NOTAM-Seed] Seed error:', e?.message || e));
+  }, NOTAM_SEED_INTERVAL_MS).unref?.();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -2816,354 +2970,40 @@ function startTheaterPostureSeedLoop() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CII (Country Instability Index) Seed — Railway reads Redis sources
-// + calls ACLED directly, computes enriched CII scores → writes to Redis
-// so bootstrap + RPC handler serve pre-computed scores (instant render)
+// CII Risk Scores warm-ping — keeps RPC cache fresh so
+// bootstrap stale key never expires.
+// The RPC handler itself refreshes the stale key on every call.
 // ─────────────────────────────────────────────────────────────
-const CII_SEED_INTERVAL_MS = 600_000; // 10 min
-const CII_SEED_TTL = 900; // 15 min
-const CII_STALE_TTL = 3600; // 1 hour
-const CII_REDIS_KEY = 'risk:scores:sebuf:v1';
-const CII_STALE_KEY = 'risk:scores:sebuf:stale:v1';
-const ACLED_ACCESS_TOKEN = process.env.ACLED_ACCESS_TOKEN || '';
-const ACLED_API_URL = 'https://acleddata.com/api/acled/read';
+const CII_WARM_PING_INTERVAL_MS = 8 * 60 * 1000; // 8 min (live cache TTL is 10 min)
+const CII_RPC_URL = 'https://api.worldmonitor.app/api/intelligence/v1/get-risk-scores';
 
-const CII_BASELINE_RISK = {
-  US: 5, RU: 35, CN: 25, UA: 50, IR: 40, IL: 45, TW: 30, KP: 45,
-  SA: 20, TR: 25, PL: 10, DE: 5, FR: 10, GB: 5, IN: 20, PK: 35,
-  SY: 50, YE: 50, MM: 45, VE: 40,
-};
-const CII_EVENT_MULTIPLIER = {
-  US: 0.3, RU: 2.0, CN: 2.5, UA: 0.8, IR: 2.0, IL: 0.7, TW: 1.5, KP: 3.0,
-  SA: 2.0, TR: 1.2, PL: 0.8, DE: 0.5, FR: 0.6, GB: 0.5, IN: 0.8, PK: 1.5,
-  SY: 0.7, YE: 0.7, MM: 1.8, VE: 1.8,
-};
-const CII_COUNTRY_NAMES = {
-  US: 'United States', RU: 'Russia', CN: 'China', UA: 'Ukraine', IR: 'Iran',
-  IL: 'Israel', TW: 'Taiwan', KP: 'North Korea', SA: 'Saudi Arabia', TR: 'Turkey',
-  PL: 'Poland', DE: 'Germany', FR: 'France', GB: 'United Kingdom', IN: 'India',
-  PK: 'Pakistan', SY: 'Syria', YE: 'Yemen', MM: 'Myanmar', VE: 'Venezuela',
-};
-const CII_COUNTRY_KEYWORDS = {
-  US: ['united states', 'usa', 'america', 'washington', 'biden', 'trump', 'pentagon'],
-  RU: ['russia', 'moscow', 'kremlin', 'putin'],
-  CN: ['china', 'beijing', 'xi jinping', 'prc'],
-  UA: ['ukraine', 'kyiv', 'zelensky', 'donbas'],
-  IR: ['iran', 'tehran', 'khamenei', 'irgc'],
-  IL: ['israel', 'tel aviv', 'netanyahu', 'idf', 'gaza'],
-  TW: ['taiwan', 'taipei'], KP: ['north korea', 'pyongyang', 'kim jong'],
-  SA: ['saudi arabia', 'riyadh'], TR: ['turkey', 'ankara', 'erdogan'],
-  PL: ['poland', 'warsaw'], DE: ['germany', 'berlin'],
-  FR: ['france', 'paris', 'macron'], GB: ['britain', 'uk', 'london'],
-  IN: ['india', 'delhi', 'modi'], PK: ['pakistan', 'islamabad'],
-  SY: ['syria', 'damascus'], YE: ['yemen', 'sanaa', 'houthi'],
-  MM: ['myanmar', 'burma'], VE: ['venezuela', 'caracas', 'maduro'],
-};
-
-const CII_ZONE_COUNTRY_MAP = {
-  'Ukraine': ['UA'], 'Middle East': ['IR', 'IL', 'SA', 'SY', 'YE'],
-  'South Asia': ['PK', 'IN'], 'Myanmar': ['MM'],
-};
-
-const CII_TIER1_BB = {
-  US: { n: 72, s: 18, e: -66, w: -180 }, RU: { n: 82, s: 41, e: 180, w: 27 },
-  CN: { n: 54, s: 18, e: 135, w: 73 }, UA: { n: 52, s: 44, e: 40, w: 22 },
-  IR: { n: 40, s: 25, e: 63, w: 44 }, IL: { n: 33.3, s: 29.5, e: 35.9, w: 34.3 },
-  TW: { n: 25.5, s: 21.5, e: 122, w: 120 }, KP: { n: 43, s: 37.6, e: 131, w: 124 },
-  SA: { n: 32, s: 16, e: 55, w: 35 }, TR: { n: 42, s: 36, e: 45, w: 26 },
-  PL: { n: 55, s: 49, e: 24, w: 14 }, DE: { n: 55, s: 47, e: 15, w: 6 },
-  FR: { n: 51, s: 42, e: 10, w: -5 }, GB: { n: 61, s: 49, e: 2, w: -8 },
-  IN: { n: 36, s: 6, e: 97, w: 68 }, PK: { n: 37, s: 24, e: 77, w: 61 },
-  SY: { n: 37.3, s: 32.3, e: 42.4, w: 35.7 }, YE: { n: 19, s: 12, e: 54.5, w: 42 },
-  MM: { n: 28, s: 10, e: 101, w: 92 }, VE: { n: 12, s: 1, e: -60, w: -73 },
-};
-
-function ciiNormalizeCountry(text) {
-  if (!text) return null;
-  const lower = text.toLowerCase();
-  for (const [code, kws] of Object.entries(CII_COUNTRY_KEYWORDS)) {
-    if (kws.some((kw) => lower.includes(kw))) return code;
-  }
-  return null;
-}
-
-function ciiBoundsLookup(lat, lon) {
-  for (const [code, b] of Object.entries(CII_TIER1_BB)) {
-    if (lat >= b.s && lat <= b.n && lon >= b.w && lon <= b.e) return code;
-  }
-  return null;
-}
-
-function ciiClamp(val, min, max) {
-  const n = Number(val);
-  if (!Number.isFinite(n)) return min;
-  return Math.max(min, Math.min(max, n));
-}
-
-function ciiAcledFetch() {
-  return new Promise((resolve) => {
-    if (!ACLED_ACCESS_TOKEN) return resolve([]);
-    const endDate = new Date().toISOString().split('T')[0];
-    const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const params = new URLSearchParams({
-      event_type: 'Protests|Riots|Battles|Explosions/Remote violence|Violence against civilians',
-      event_date: `${startDate}|${endDate}`,
-      event_date_where: 'BETWEEN',
-      limit: '2000',
-      _format: 'json',
-    });
-    const url = new URL(`${ACLED_API_URL}?${params}`);
-    const req = https.request(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${ACLED_ACCESS_TOKEN}`,
-        'User-Agent': 'Mozilla/5.0 (WorldMonitor Railway Seed)',
-      },
-      timeout: 15000,
-    }, (resp) => {
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        resp.resume();
-        return resolve([]);
-      }
-      let raw = '';
-      resp.on('data', (chunk) => { raw += chunk; });
-      resp.on('end', () => {
-        try {
-          const parsed = JSON.parse(raw);
-          resolve(Array.isArray(parsed?.data) ? parsed.data : []);
-        } catch { resolve([]); }
-      });
-    });
-    req.on('error', () => resolve([]));
-    req.on('timeout', () => { req.destroy(); resolve([]); });
-    req.end();
-  });
-}
-
-let ciiSeedInFlight = false;
-
-async function seedCiiScores() {
-  if (ciiSeedInFlight) return;
-  ciiSeedInFlight = true;
-  const t0 = Date.now();
+async function seedCiiWarmPing() {
   try {
-    const [acled, ucdpRaw, outagesRaw, climateRaw, cyberRaw, firesRaw, gpsRaw, iranRaw] = await Promise.all([
-      ciiAcledFetch(),
-      upstashGet('conflict:ucdp-events:v1'),
-      upstashGet('infra:outages:v1'),
-      upstashGet('climate:anomalies:v1'),
-      upstashGet('cyber:threats-bootstrap:v2'),
-      upstashGet('wildfire:fires:v1'),
-      upstashGet('intelligence:gpsjam:v2'),
-      upstashGet('conflict:iran-events:v1'),
-    ]);
-
-    const countryCounts = {};
-    for (const code of Object.keys(CII_BASELINE_RISK)) {
-      countryCounts[code] = { protests: 0, riots: 0, battles: 0, explosions: 0, civilian: 0, fatalities: 0 };
-    }
-
-    if (Array.isArray(acled)) {
-      for (const e of acled) {
-        const code = ciiNormalizeCountry(e.country);
-        if (!code || !countryCounts[code]) continue;
-        const type = (e.event_type || '').toLowerCase();
-        const fat = ciiClamp(e.fatalities, 0, 10000);
-        if (type.includes('protest')) countryCounts[code].protests++;
-        else if (type.includes('riot')) countryCounts[code].riots++;
-        else if (type.includes('battle')) { countryCounts[code].battles++; countryCounts[code].fatalities += fat; }
-        else if (type.includes('explosion') || type.includes('remote')) { countryCounts[code].explosions++; countryCounts[code].fatalities += fat; }
-        else if (type.includes('civilian')) { countryCounts[code].civilian++; countryCounts[code].fatalities += fat; }
-      }
-    }
-
-    const ucdpFloors = {};
-    if (Array.isArray(ucdpRaw?.classifications || ucdpRaw)) {
-      const items = ucdpRaw?.classifications || ucdpRaw;
-      for (const u of items) {
-        const code = u?.countryCode || u?.country_code;
-        if (!code || !countryCounts[code]) continue;
-        const intensity = (u?.intensity || '').toLowerCase();
-        if (intensity === 'war') ucdpFloors[code] = Math.max(ucdpFloors[code] || 0, 70);
-        else if (intensity === 'minor') ucdpFloors[code] = Math.max(ucdpFloors[code] || 0, 50);
-      }
-    }
-
-    const outageBoosts = {};
-    if (Array.isArray(outagesRaw?.outages || outagesRaw)) {
-      const items = outagesRaw?.outages || outagesRaw;
-      for (const o of items) {
-        const code = ciiNormalizeCountry(o?.country) || o?.countryCode;
-        if (!code || !countryCounts[code]) continue;
-        const sev = (o?.severity || '').toLowerCase();
-        const boost = sev === 'total' ? 30 : sev === 'major' ? 15 : 5;
-        outageBoosts[code] = Math.min(50, (outageBoosts[code] || 0) + boost);
-      }
-    }
-
-    const climateBoosts = {};
-    if (Array.isArray(climateRaw?.anomalies || climateRaw)) {
-      const items = climateRaw?.anomalies || climateRaw;
-      for (const a of items) {
-        if ((a?.severity || '') === 'normal') continue;
-        const codes = CII_ZONE_COUNTRY_MAP[a?.zone] || [];
-        const stress = a?.severity === 'extreme' ? 15 : 8;
-        for (const c of codes) {
-          if (countryCounts[c]) climateBoosts[c] = Math.max(climateBoosts[c] || 0, stress);
-        }
-      }
-    }
-
-    const cyberBoosts = {};
-    if (Array.isArray(cyberRaw?.threats || cyberRaw)) {
-      const items = cyberRaw?.threats || cyberRaw;
-      for (const t of items) {
-        const code = t?.country || (Number.isFinite(t?.lat) && Number.isFinite(t?.lon) ? ciiBoundsLookup(t.lat, t.lon) : null);
-        if (!code || !countryCounts[code]) continue;
-        const sev = (t?.severity || '').toLowerCase();
-        const val = sev === 'critical' ? 3 : sev === 'high' ? 1.8 : sev === 'medium' ? 0.9 : 0;
-        cyberBoosts[code] = (cyberBoosts[code] || 0) + val;
-      }
-    }
-    for (const code of Object.keys(cyberBoosts)) cyberBoosts[code] = Math.min(12, cyberBoosts[code]);
-
-    const fireBoosts = {};
-    if (Array.isArray(firesRaw?.fires || firesRaw)) {
-      const items = firesRaw?.fires || firesRaw;
-      for (const f of items) {
-        const code = f?.region || (Number.isFinite(f?.lat) && Number.isFinite(f?.lon) ? ciiBoundsLookup(f.lat, f.lon) : null);
-        if (!code || !countryCounts[code]) continue;
-        const isHigh = (f?.brightness >= 360 || f?.frp >= 50);
-        if (!fireBoosts[code]) fireBoosts[code] = { count: 0, high: 0 };
-        fireBoosts[code].count++;
-        if (isHigh) fireBoosts[code].high++;
-      }
-    }
-    for (const code of Object.keys(fireBoosts)) {
-      const fb = fireBoosts[code];
-      fireBoosts[code] = Math.min(8, fb.high * 1.5 + Math.min(20, fb.count) * 0.25);
-    }
-
-    const gpsBoosts = {};
-    if (Array.isArray(gpsRaw?.hexes || gpsRaw)) {
-      const items = gpsRaw?.hexes || gpsRaw;
-      for (const hex of items) {
-        if (!Number.isFinite(hex?.lat) || !Number.isFinite(hex?.lon)) continue;
-        const code = ciiBoundsLookup(hex.lat, hex.lon);
-        if (!code || !countryCounts[code]) continue;
-        const val = (hex?.level === 'high') ? 5 : 2;
-        gpsBoosts[code] = (gpsBoosts[code] || 0) + val;
-      }
-    }
-    for (const code of Object.keys(gpsBoosts)) gpsBoosts[code] = Math.min(35, gpsBoosts[code]);
-
-    const iranStrikeBoosts = {};
-    if (Array.isArray(iranRaw?.events || iranRaw)) {
-      const items = iranRaw?.events || iranRaw;
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      for (const e of items) {
-        if (e?.timestamp && e.timestamp < sevenDaysAgo) continue;
-        if (!Number.isFinite(e?.latitude) || !Number.isFinite(e?.longitude)) continue;
-        const code = ciiBoundsLookup(e.latitude, e.longitude);
-        if (!code || !countryCounts[code]) continue;
-        const sevVal = (e?.severity || '').toLowerCase();
-        const boost = (sevVal === 'high' || sevVal === 'critical') ? 8 : 3;
-        iranStrikeBoosts[code] = (iranStrikeBoosts[code] || 0) + boost;
-      }
-    }
-    for (const code of Object.keys(iranStrikeBoosts)) iranStrikeBoosts[code] = Math.min(50, iranStrikeBoosts[code]);
-
-    const ciiScores = [];
-    for (const [code, _name] of Object.entries(CII_COUNTRY_NAMES)) {
-      const baseline = CII_BASELINE_RISK[code] || 20;
-      const mult = CII_EVENT_MULTIPLIER[code] || 1.0;
-      const c = countryCounts[code] || { protests: 0, riots: 0, battles: 0, explosions: 0, civilian: 0, fatalities: 0 };
-
-      const isHighVolume = mult < 0.7;
-      const protestCount = c.protests + c.riots;
-      const adjustedProtests = isHighVolume
-        ? Math.log2(protestCount + 1) * mult * 5
-        : protestCount * mult;
-      const unrest = ciiClamp(adjustedProtests * 8 + (outageBoosts[code] || 0), 0, 100);
-
-      const battleScore = Math.min(50, (c.battles * 3 + c.explosions * 4 + c.civilian * 5) * mult);
-      const fatalityScore = Math.min(40, Math.sqrt(c.fatalities) * 5 * mult);
-      const civilianBoost = c.civilian > 0 ? Math.min(10, c.civilian * 3) : 0;
-      const acledConflict = battleScore + fatalityScore + civilianBoost + (iranStrikeBoosts[code] || 0);
-      const conflict = ciiClamp(Math.max(acledConflict, ucdpFloors[code] || 0), 0, 100);
-
-      const security = ciiClamp(gpsBoosts[code] || 0, 0, 100);
-      const information = 0;
-
-      const eventScore = unrest * 0.25 + conflict * 0.30 + security * 0.20 + information * 0.25;
-      const supplemental = (climateBoosts[code] || 0) + (typeof cyberBoosts[code] === 'number' ? cyberBoosts[code] : 0) + (typeof fireBoosts[code] === 'number' ? fireBoosts[code] : 0);
-      const blended = baseline * 0.4 + eventScore * 0.6 + supplemental;
-      const floor = ucdpFloors[code] || 0;
-      const combinedScore = ciiClamp(Math.round(Math.max(baseline, Math.max(floor, blended))), 0, 100);
-
-      ciiScores.push({
-        region: code,
-        staticBaseline: baseline,
-        dynamicScore: combinedScore - baseline,
-        combinedScore,
-        trend: 'TREND_DIRECTION_STABLE',
-        components: {
-          ciiContribution: Math.round(unrest),
-          geoConvergence: Math.round(conflict),
-          militaryActivity: Math.round(security),
-          newsActivity: Math.round(information),
-        },
-        computedAt: Date.now(),
-      });
-    }
-
-    ciiScores.sort((a, b) => b.combinedScore - a.combinedScore);
-
-    if (!Array.isArray(ciiScores) || ciiScores.length === 0 || ciiScores.some(s => !Number.isFinite(s.combinedScore))) {
-      console.warn('[CII] Invalid payload shape — skipping Redis write');
+    const resp = await fetch(CII_RPC_URL, {
+      headers: {
+        'User-Agent': CHROME_UA,
+        Origin: 'https://worldmonitor.app',
+      },
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!resp.ok) {
+      console.warn(`[CII] Warm-ping failed: HTTP ${resp.status}`);
       return;
     }
-
-    const top5 = ciiScores.slice(0, 5);
-    const weights = top5.map((_, i) => 1 - i * 0.15);
-    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-    const weightedSum = top5.reduce((sum, s, i) => sum + s.combinedScore * weights[i], 0);
-    const overallScore = Math.min(100, Math.round((weightedSum / totalWeight) * 0.7 + 15));
-
-    const strategicRisks = [{
-      region: 'global',
-      level: overallScore >= 70 ? 'SEVERITY_LEVEL_HIGH' : overallScore >= 40 ? 'SEVERITY_LEVEL_MEDIUM' : 'SEVERITY_LEVEL_LOW',
-      score: overallScore,
-      factors: top5.map((s) => s.region),
-      trend: 'TREND_DIRECTION_STABLE',
-    }];
-
-    const payload = { ciiScores, strategicRisks };
-    const ok1 = await upstashSet(CII_REDIS_KEY, payload, CII_SEED_TTL);
-    if (ok1) {
-      await upstashSet(CII_STALE_KEY, payload, CII_STALE_TTL);
-    }
-    await upstashSet('seed-meta:risk:scores', { fetchedAt: Date.now(), recordCount: ciiScores.length }, 604800);
-    const topEntry = ciiScores[0];
-    console.log(`[CII] Seeded ${ciiScores.length} scores (top: ${topEntry?.region}=${topEntry?.combinedScore}, acled:${Array.isArray(acled) ? acled.length : 0} redis:${ok1 ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    const data = await resp.json();
+    const count = data?.ciiScores?.length || 0;
+    console.log(`[CII] Warm-ping OK: ${count} scores`);
   } catch (e) {
-    console.warn('[CII] Seed error:', e?.message || e);
-  } finally {
-    ciiSeedInFlight = false;
+    console.warn('[CII] Warm-ping error:', e?.message || e);
   }
 }
 
-async function startCiiSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[CII] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[CII] Seed loop starting (interval ${CII_SEED_INTERVAL_MS / 1000 / 60}min, acled:${ACLED_ACCESS_TOKEN ? 'yes' : 'no'})`);
-  seedCiiScores().catch((e) => console.warn('[CII] Initial seed error:', e?.message || e));
+function startCiiWarmPingLoop() {
+  console.log(`[CII] Warm-ping loop starting (interval ${CII_WARM_PING_INTERVAL_MS / 1000 / 60}min)`);
+  seedCiiWarmPing().catch((e) => console.warn('[CII] Initial warm-ping error:', e?.message || e));
   setInterval(() => {
-    seedCiiScores().catch((e) => console.warn('[CII] Seed error:', e?.message || e));
-  }, CII_SEED_INTERVAL_MS).unref?.();
+    seedCiiWarmPing().catch((e) => console.warn('[CII] Warm-ping error:', e?.message || e));
+  }, CII_WARM_PING_INTERVAL_MS).unref?.();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -3318,6 +3158,215 @@ async function startSpendingSeedLoop() {
   setInterval(() => {
     seedUsaSpending().catch((e) => console.warn('[Spending] Seed error:', e?.message || e));
   }, SPENDING_SEED_INTERVAL_MS).unref?.();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tech Events seed — Techmeme ICS + dev.events RSS → Redis
+// Curated major conferences as fallback for events that may
+// fall off limited RSS feeds. Vercel edge can't reach these
+// sources reliably (IP blocking), so Railway fetches them.
+// ─────────────────────────────────────────────────────────────
+
+const TECH_EVENTS_SEED_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
+const TECH_EVENTS_TTL_SECONDS = 86400; // 24h safety net
+const TECH_EVENTS_REDIS_KEY = 'research:tech-events:v1';
+const TECH_EVENTS_BOOTSTRAP_KEY = 'research:tech-events-bootstrap:v1';
+const TECH_EVENTS_ICS_URL = 'https://www.techmeme.com/newsy_events.ics';
+const TECH_EVENTS_RSS_URL = 'https://dev.events/rss.xml';
+
+const TECH_EVENTS_CURATED = [
+  { id: 'gitex-global-2026', title: 'GITEX Global 2026', type: 'conference', location: 'Dubai World Trade Centre, Dubai', startDate: '2026-12-07', endDate: '2026-12-11', url: 'https://www.gitex.com', source: 'curated', description: "World's largest tech & startup show" },
+  { id: 'token2049-dubai-2026', title: 'TOKEN2049 Dubai 2026', type: 'conference', location: 'Dubai, UAE', startDate: '2026-04-29', endDate: '2026-04-30', url: 'https://www.token2049.com', source: 'curated', description: 'Premier crypto event in Dubai' },
+  { id: 'collision-2026', title: 'Collision 2026', type: 'conference', location: 'Toronto, Canada', startDate: '2026-06-22', endDate: '2026-06-25', url: 'https://collisionconf.com', source: 'curated', description: "North America's fastest growing tech conference" },
+  { id: 'web-summit-2026', title: 'Web Summit 2026', type: 'conference', location: 'Lisbon, Portugal', startDate: '2026-11-02', endDate: '2026-11-05', url: 'https://websummit.com', source: 'curated', description: "The world's premier tech conference" },
+];
+
+function techEventsParseICS(icsText) {
+  const events = [];
+  const blocks = icsText.split('BEGIN:VEVENT').slice(1);
+  for (const block of blocks) {
+    const summaryMatch = block.match(/SUMMARY:(.+)/);
+    const locationMatch = block.match(/LOCATION:(.+)/);
+    const dtstartMatch = block.match(/DTSTART;VALUE=DATE:(\d+)/);
+    const dtendMatch = block.match(/DTEND;VALUE=DATE:(\d+)/);
+    const urlMatch = block.match(/URL:(.+)/);
+    const uidMatch = block.match(/UID:(.+)/);
+    if (!summaryMatch || !dtstartMatch) continue;
+    const summary = summaryMatch[1].trim();
+    const location = locationMatch ? locationMatch[1].trim() : '';
+    const startDate = dtstartMatch[1];
+    const endDate = dtendMatch ? dtendMatch[1] : startDate;
+    let type = 'other';
+    if (summary.startsWith('Earnings:')) type = 'earnings';
+    else if (summary.startsWith('IPO')) type = 'ipo';
+    else if (location) type = 'conference';
+    events.push({
+      id: uidMatch ? uidMatch[1].trim() : '',
+      title: summary,
+      type,
+      location,
+      startDate: `${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}`,
+      endDate: `${endDate.slice(0, 4)}-${endDate.slice(4, 6)}-${endDate.slice(6, 8)}`,
+      url: urlMatch ? urlMatch[1].trim() : '',
+      source: 'techmeme',
+      description: '',
+    });
+  }
+  return events;
+}
+
+function techEventsParseRSS(rssText) {
+  const events = [];
+  const itemMatches = rssText.matchAll(/<item>([\s\S]*?)<\/item>/g);
+  for (const match of itemMatches) {
+    const item = match[1];
+    const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/);
+    const linkMatch = item.match(/<link>(.*?)<\/link>/);
+    const descMatch = item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>|<description>(.*?)<\/description>/s);
+    const guidMatch = item.match(/<guid[^>]*>(.*?)<\/guid>/);
+    const title = titleMatch ? (titleMatch[1] ?? titleMatch[2]) : null;
+    if (!title) continue;
+    const link = linkMatch ? linkMatch[1] || '' : '';
+    const description = descMatch ? (descMatch[1] ?? descMatch[2] ?? '') : '';
+    const guid = guidMatch ? guidMatch[1] || '' : '';
+    const dateMatch = description.match(/on\s+(\w+\s+\d{1,2},?\s+\d{4})/i);
+    let startDate = null;
+    if (dateMatch) {
+      const parsed = new Date(dateMatch[1]);
+      if (!isNaN(parsed.getTime())) startDate = parsed.toISOString().split('T')[0];
+    }
+    if (!startDate) continue;
+    if (new Date(startDate) < new Date(new Date().toISOString().split('T')[0])) continue;
+    let location = null;
+    const locMatch = description.match(/(?:in|at)\s+([A-Za-z\s]+,\s*[A-Za-z\s]+)(?:\.|$)/i) ||
+                     description.match(/Location:\s*([^<\n]+)/i);
+    if (locMatch) location = locMatch[1].trim();
+    if (description.toLowerCase().includes('online')) location = 'Online';
+    events.push({
+      id: guid || `dev-events-${title.slice(0, 20)}`,
+      title,
+      type: 'conference',
+      location: location || '',
+      startDate,
+      endDate: startDate,
+      url: link,
+      source: 'dev.events',
+      description: '',
+    });
+  }
+  return events;
+}
+
+function techEventsFetchUrl(url) {
+  return new Promise((resolve) => {
+    const request = https.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/calendar, application/rss+xml, application/xml, text/xml, */*',
+      },
+      timeout: 15000,
+    }, (response) => {
+      if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+        return techEventsFetchUrl(response.headers.location).then(resolve);
+      }
+      if (response.statusCode !== 200) {
+        resolve(null);
+        response.resume();
+        return;
+      }
+      let data = '';
+      response.on('data', (chunk) => { data += chunk; });
+      response.on('end', () => resolve(data));
+      response.on('error', () => resolve(null));
+    });
+    request.on('error', () => resolve(null));
+    request.on('timeout', () => { request.destroy(); resolve(null); });
+  });
+}
+
+let techEventsSeedInFlight = false;
+
+async function seedTechEvents() {
+  if (techEventsSeedInFlight) return;
+  techEventsSeedInFlight = true;
+  const t0 = Date.now();
+  try {
+    const [icsText, rssText] = await Promise.all([
+      techEventsFetchUrl(TECH_EVENTS_ICS_URL),
+      techEventsFetchUrl(TECH_EVENTS_RSS_URL),
+    ]);
+
+    let events = [];
+    if (icsText) {
+      const parsed = techEventsParseICS(icsText);
+      events.push(...parsed);
+      console.log(`[TechEvents] Techmeme ICS: ${parsed.length} events`);
+    } else {
+      console.warn('[TechEvents] Techmeme ICS fetch failed');
+    }
+    if (rssText) {
+      const parsed = techEventsParseRSS(rssText);
+      events.push(...parsed);
+      console.log(`[TechEvents] dev.events RSS: ${parsed.length} events`);
+    } else {
+      console.warn('[TechEvents] dev.events RSS fetch failed');
+    }
+
+    // Add curated events that are still in the future
+    const today = new Date().toISOString().split('T')[0];
+    for (const curated of TECH_EVENTS_CURATED) {
+      if (curated.startDate >= today) events.push(curated);
+    }
+
+    // Deduplicate by normalized title + year
+    const seen = new Set();
+    events = events.filter((e) => {
+      const year = e.startDate.slice(0, 4);
+      const key = e.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30) + year;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Sort by date
+    events.sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+    if (events.length === 0) {
+      console.warn('[TechEvents] No events from any source — preserving last good data');
+      return;
+    }
+
+    const payload = {
+      success: true,
+      count: events.length,
+      conferenceCount: events.filter((e) => e.type === 'conference').length,
+      mappableCount: 0, // geocoding happens in RPC handler
+      lastUpdated: new Date().toISOString(),
+      events,
+      error: '',
+    };
+
+    const ok1 = await upstashSet(TECH_EVENTS_REDIS_KEY, payload, TECH_EVENTS_TTL_SECONDS);
+    const ok2 = await upstashSet(TECH_EVENTS_BOOTSTRAP_KEY, payload, TECH_EVENTS_TTL_SECONDS);
+    const ok3 = await upstashSet('seed-meta:research:tech-events', { fetchedAt: Date.now(), recordCount: events.length }, 604800);
+    console.log(`[TechEvents] Seeded ${events.length} events (redis: ${ok1 && ok2 && ok3 ? 'OK' : 'PARTIAL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  } catch (e) {
+    console.warn('[TechEvents] Seed error:', e?.message || e);
+  } finally {
+    techEventsSeedInFlight = false;
+  }
+}
+
+async function startTechEventsSeedLoop() {
+  if (!UPSTASH_ENABLED) {
+    console.log('[TechEvents] Disabled (no Upstash Redis)');
+    return;
+  }
+  console.log(`[TechEvents] Seed loop starting (interval ${TECH_EVENTS_SEED_INTERVAL_MS / 1000 / 60 / 60}h)`);
+  seedTechEvents().catch((e) => console.warn('[TechEvents] Initial seed error:', e?.message || e));
+  setInterval(() => {
+    seedTechEvents().catch((e) => console.warn('[TechEvents] Seed error:', e?.message || e));
+  }, TECH_EVENTS_SEED_INTERVAL_MS).unref?.();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -5759,7 +5808,7 @@ function handleNotamProxyRequest(req, res) {
     }, notamCache.data);
   }
 
-  const apiUrl = `https://dataservices.icao.int/api/notams-realtime-list?api_key=${ICAO_API_KEY}&format=json&locations=${encodeURIComponent(locations)}`;
+  const apiUrl = `https://dataservices.icao.int/api/notams-realtime-list?api_key=${ICAO_API_KEY}&format=json&locations=${locations}`;
 
   const request = https.get(apiUrl, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
@@ -6474,10 +6523,10 @@ server.listen(PORT, () => {
   startUcdpSeedLoop();
   startMarketDataSeedLoop();
   startAviationSeedLoop();
+  startNotamSeedLoop();
   // Cyber seed disabled — standalone cron seed-cyber-threats.mjs handles this
   // (avoids burning 12 extra AbuseIPDB calls/day from duplicate relay loop)
-  // CII scoring now computed on-demand by the RPC handler (get-risk-scores.ts)
-  // startCiiSeedLoop();
+  startCiiWarmPingLoop();
   startPositiveEventsSeedLoop();
   startClassifySeedLoop();
   startServiceStatusesSeedLoop();
@@ -6487,6 +6536,7 @@ server.listen(PORT, () => {
   startSpendingSeedLoop();
   startWorldBankSeedLoop();
   startSatelliteSeedLoop();
+  startTechEventsSeedLoop();
 });
 
 wss.on('connection', (ws, req) => {

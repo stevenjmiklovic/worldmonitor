@@ -62,14 +62,29 @@ interface ParsedItem {
   classSource: 'keyword' | 'llm';
 }
 
+function createTimeoutLinkedController(parentSignal: AbortSignal): {
+  controller: AbortController;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  parentSignal.addEventListener('abort', onAbort, { once: true });
+
+  return {
+    controller,
+    cleanup: () => {
+      clearTimeout(timeout);
+      parentSignal.removeEventListener('abort', onAbort);
+    },
+  };
+}
+
 async function fetchRssText(
   url: string,
   signal: AbortSignal,
 ): Promise<string | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
-  const onAbort = () => controller.abort();
-  signal.addEventListener('abort', onAbort, { once: true });
+  const { controller, cleanup } = createTimeoutLinkedController(signal);
 
   try {
     const resp = await fetch(url, {
@@ -83,8 +98,7 @@ async function fetchRssText(
     if (!resp.ok) return null;
     return await resp.text();
   } finally {
-    clearTimeout(timeout);
-    signal.removeEventListener('abort', onAbort);
+    cleanup();
   }
 }
 
@@ -105,10 +119,7 @@ async function fetchAndParseRss(
         const relayBase = getRelayBaseUrl();
         if (relayBase) {
           const relayUrl = `${relayBase}/rss?url=${encodeURIComponent(feed.url)}`;
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
-          const onAbort = () => controller.abort();
-          signal.addEventListener('abort', onAbort, { once: true });
+          const { controller, cleanup } = createTimeoutLinkedController(signal);
           try {
             const resp = await fetch(relayUrl, {
               headers: getRelayHeaders(),
@@ -116,8 +127,7 @@ async function fetchAndParseRss(
             });
             if (resp.ok) text = await resp.text();
           } catch { /* relay also failed */ } finally {
-            clearTimeout(timeout);
-            signal.removeEventListener('abort', onAbort);
+            cleanup();
           }
         }
       }

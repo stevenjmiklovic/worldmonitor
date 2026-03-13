@@ -150,27 +150,21 @@ export interface DeductSituationResponse {
   provider: string;
 }
 
-export interface GenerateGameEventsRequest {
-  headlines: string[];
-  turn: number;
-  count: number;
+export interface GetCountryFactsRequest {
+  countryCode: string;
 }
 
-export interface GeneratedGameEvent {
-  headline: string;
-  description: string;
-  region: string;
-  stabilityDelta: number;
-  influenceDelta: number;
-  threatDelta: number;
-  approvalDelta: number;
-  defconDelta: number;
-}
-
-export interface GenerateGameEventsResponse {
-  events: GeneratedGameEvent[];
-  provider: string;
-  fallback: boolean;
+export interface GetCountryFactsResponse {
+  headOfState: string;
+  headOfStateTitle: string;
+  wikipediaSummary: string;
+  wikipediaThumbnailUrl: string;
+  population: number;
+  capital: string;
+  languages: string[];
+  currencies: string[];
+  areaSqKm: number;
+  countryName: string;
 }
 
 export type SeverityLevel = "SEVERITY_LEVEL_UNSPECIFIED" | "SEVERITY_LEVEL_LOW" | "SEVERITY_LEVEL_MEDIUM" | "SEVERITY_LEVEL_HIGH";
@@ -230,7 +224,7 @@ export interface IntelligenceServiceHandler {
   getCountryIntelBrief(ctx: ServerContext, req: GetCountryIntelBriefRequest): Promise<GetCountryIntelBriefResponse>;
   searchGdeltDocuments(ctx: ServerContext, req: SearchGdeltDocumentsRequest): Promise<SearchGdeltDocumentsResponse>;
   deductSituation(ctx: ServerContext, req: DeductSituationRequest): Promise<DeductSituationResponse>;
-  generateGameEvents(ctx: ServerContext, req: GenerateGameEventsRequest): Promise<GenerateGameEventsResponse>;
+  getCountryFacts(ctx: ServerContext, req: GetCountryFactsRequest): Promise<GetCountryFactsResponse>;
 }
 
 export function createIntelligenceServiceRoutes(
@@ -524,14 +518,18 @@ export function createIntelligenceServiceRoutes(
       },
     },
     {
-      method: "POST",
-      path: "/api/intelligence/v1/generate-game-events",
+      method: "GET",
+      path: "/api/intelligence/v1/get-country-facts",
       handler: async (req: Request): Promise<Response> => {
         try {
           const pathParams: Record<string, string> = {};
-          const body = await req.json() as GenerateGameEventsRequest;
+          const url = new URL(req.url, "http://localhost");
+          const params = url.searchParams;
+          const body: GetCountryFactsRequest = {
+            countryCode: params.get("country_code") ?? "",
+          };
           if (options?.validateRequest) {
-            const bodyViolations = options.validateRequest("generateGameEvents", body);
+            const bodyViolations = options.validateRequest("getCountryFacts", body);
             if (bodyViolations) {
               throw new ValidationError(bodyViolations);
             }
@@ -543,8 +541,8 @@ export function createIntelligenceServiceRoutes(
             headers: Object.fromEntries(req.headers.entries()),
           };
 
-          const result = await handler.generateGameEvents(ctx, body);
-          return new Response(JSON.stringify(result as GenerateGameEventsResponse), {
+          const result = await handler.getCountryFacts(ctx, body);
+          return new Response(JSON.stringify(result as GetCountryFactsResponse), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });

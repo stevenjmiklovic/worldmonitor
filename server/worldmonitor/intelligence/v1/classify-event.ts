@@ -7,7 +7,7 @@ import type {
 
 import { cachedFetchJson } from '../../../_shared/redis';
 import { markNoCacheResponse } from '../../../_shared/response-headers';
-import { UPSTREAM_TIMEOUT_MS, GROQ_API_URL, GROQ_MODEL, sha256Hex } from './_shared';
+import { UPSTREAM_TIMEOUT_MS, GROQ_API_URL, GROQ_MODEL, buildClassifyCacheKey } from './_shared';
 import { CHROME_UA } from '../../../_shared/constants';
 
 // ========================================================================
@@ -51,7 +51,7 @@ export async function classifyEvent(
   const apiUrl = process.env.LLM_API_URL || GROQ_API_URL;
   const model = process.env.LLM_MODEL || GROQ_MODEL;
 
-  const cacheKey = `classify:sebuf:v1:${(await sha256Hex(title.toLowerCase())).slice(0, 16)}`;
+  const cacheKey = await buildClassifyCacheKey(title);
 
   let cached: { level: string; category: string; timestamp: number } | null = null;
   try {
