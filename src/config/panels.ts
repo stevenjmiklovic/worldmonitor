@@ -1100,7 +1100,6 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
     panelKeys: ['species', 'renewable', 'giving'],
     variants: ['happy'],
   },
-
   // Game variant (The Great Game)
   gameSimulation: {
     labelKey: 'header.panelCatGameSimulation',
