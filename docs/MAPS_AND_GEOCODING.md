@@ -96,7 +96,7 @@ Common alternate names are mapped in `NAME_ALIASES`:
 
 ## Country Boundary Overrides
 
-The override mechanism lets us improve individual country boundaries without replacing the entire `countries.geojson`. This is the foundation for addressing disputed borders (see [#1044](https://github.com/koala73/worldmonitor/issues/1044)).
+The override mechanism lets us improve individual country boundaries without replacing the entire `countries.geojson`. This is the foundation for addressing disputed borders (see [#1044](https://github.com/stevenjmiklovic/worldmonitor/issues/1044)).
 
 ### How It Works
 
