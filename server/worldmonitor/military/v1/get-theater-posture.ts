@@ -36,6 +36,7 @@ function getRelayRequestHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'User-Agent': CHROME_UA,
+    'ngrok-skip-browser-warning': '1',
   };
   const relaySecret = process.env.RELAY_SHARED_SECRET;
   if (relaySecret) {

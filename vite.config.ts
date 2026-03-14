@@ -2,10 +2,23 @@ import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve, dirname, extname } from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
+import { readFileSync } from 'fs';
 import { brotliCompress } from 'zlib';
 import { promisify } from 'util';
 import pkg from './package.json';
 import { VARIANT_META } from './src/config/variant-meta';
+
+// Load .env into process.env so non-VITE_ server-side vars (e.g. WS_RELAY_URL)
+// are visible to Vite middleware handlers (sebufApiPlugin etc.) at dev time.
+// Vite only injects VITE_* vars into import.meta.env; non-prefixed vars need
+// this explicit step to reach process.env in server-side plugin code.
+try {
+  const lines = readFileSync(new URL('.env', import.meta.url), 'utf-8').split('\n');
+  for (const line of lines) {
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (m) process.env[m[1]] ??= m[2].trim();
+  }
+} catch { /* .env is optional */ }
 
 const isE2E = process.env.VITE_E2E === '1';
 const isDesktopBuild = process.env.VITE_DESKTOP_RUNTIME === '1';
@@ -823,6 +836,7 @@ export default defineConfig({
     port: 3000,
     open: !isE2E,
     hmr: isE2E ? false : undefined,
+    allowedHosts: ['nancey-phyllomic-lauditorily.ngrok-free.dev'],
     watch: {
       ignored: [
         '**/test-results/**',

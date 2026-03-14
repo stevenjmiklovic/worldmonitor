@@ -9,7 +9,7 @@ export function getRelayBaseUrl() {
 }
 
 export function getRelayHeaders(baseHeaders = {}) {
-  const headers = { ...baseHeaders };
+  const headers = { 'ngrok-skip-browser-warning': '1', ...baseHeaders };
   const relaySecret = process.env.RELAY_SHARED_SECRET || '';
   if (relaySecret) {
     const relayHeader = (process.env.RELAY_AUTH_HEADER || 'x-relay-key').toLowerCase();

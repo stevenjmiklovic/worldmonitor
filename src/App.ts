@@ -396,6 +396,11 @@ export class App {
       renewablePanel: null,
       tvMode: null,
       happyAllItems: [],
+      // Game variant state
+      gameHudPanel: null,
+      gameBriefingPanel: null,
+      gameLogPanel: null,
+      gameState: null,
       isDestroyed: false,
       isPlaybackMode: false,
       isIdle: false,

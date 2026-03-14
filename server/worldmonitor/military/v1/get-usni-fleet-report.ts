@@ -90,6 +90,7 @@ const REGION_COORDS: Record<string, { lat: number; lon: number }> = {
   'Pacific Ocean': { lat: 20.0, lon: -150.0 },
   'Eastern Pacific': { lat: 18.0, lon: -125.0 },
   'Western Pacific': { lat: 20.0, lon: 140.0 },
+  'South Pacific': { lat: -25.0, lon: -130.0 },
   'Indian Ocean': { lat: -5.0, lon: 75.0 },
   Antarctic: { lat: -70.0, lon: 20.0 },
   'Baltic Sea': { lat: 58.0, lon: 20.0 },

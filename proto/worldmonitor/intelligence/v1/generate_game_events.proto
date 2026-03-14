@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package worldmonitor.intelligence.v1;
+
+// GenerateGameEventsRequest provides real-world headlines for AI-driven game event generation.
+message GenerateGameEventsRequest {
+  // Recent news headlines (up to 10) to ground the events in real-world context.
+  repeated string headlines = 1;
+
+  // Current game turn number, used for prompt context and cache keying.
+  int32 turn = 2;
+
+  // Number of events to generate (1–3).
+  int32 count = 3;
+}
+
+// GenerateGameEventsResponse contains AI-generated events for the current game turn.
+message GenerateGameEventsResponse {
+  // Events to inject into the game briefing this turn.
+  repeated GeneratedGameEvent events = 1;
+
+  // LLM provider used to generate the events.
+  string provider = 2;
+
+  // True if generation failed; the caller should fall back to template-based events.
+  bool fallback = 3;
+}
+
+// GeneratedGameEvent is one AI-generated world event for The Great Game simulation.
+message GeneratedGameEvent {
+  // Short event headline (≤80 chars).
+  string headline = 1;
+
+  // 1–2 sentence flavour description (≤200 chars).
+  string description = 2;
+
+  // Target game region ID (one of the nine GameRegionId values).
+  string region = 3;
+
+  // Stability delta applied to the target region (−20 to +10).
+  int32 stability_delta = 4;
+
+  // Influence delta applied to the target region (−15 to +15).
+  int32 influence_delta = 5;
+
+  // Threat-level delta applied to the target region (−10 to +20).
+  int32 threat_delta = 6;
+
+  // Domestic approval delta (−8 to +4).
+  int32 approval_delta = 7;
+
+  // DEFCON delta (−1, 0, or +1).
+  int32 defcon_delta = 8;
+}

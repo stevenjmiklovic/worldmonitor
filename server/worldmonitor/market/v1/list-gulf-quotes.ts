@@ -2,7 +2,7 @@
  * RPC: ListGulfQuotes
  * Fetches GCC stock indices, Gulf currencies, and oil benchmarks from Yahoo Finance.
  *
- * Inspired by https://github.com/koala73/worldmonitor/pull/641 (@aa5064).
+ * Inspired by https://github.com/stevenjmiklovic/worldmonitor/pull/641 (@aa5064).
  */
 
 import type {
