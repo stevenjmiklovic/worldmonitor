@@ -510,6 +510,7 @@ const FULL_FEEDS: Record<string, Feed[]> = {
         es: rss('https://es.euronews.com/rss?format=xml'),
         pt: rss('https://pt.euronews.com/rss?format=xml'),
         ru: rss('https://ru.euronews.com/rss?format=xml'),
+        gr: rss('https://gr.euronews.com/rss?format=xml'),
       }
     },
     {
