@@ -254,8 +254,14 @@ export async function runSeed(domain, resource, canonicalKey, fetchFn, opts = {}
       process.exit(0);
     }
     const { payloadBytes } = publishResult;
-    const recordCount = Array.isArray(data) ? data.length
-      : (data?.events?.length ?? data?.earthquakes?.length ?? data?.outages?.length
+    const topicArticleCount = Array.isArray(data?.topics)
+      ? data.topics.reduce((n, t) => n + (t?.articles?.length || t?.events?.length || 0), 0)
+      : undefined;
+    const recordCount = opts.recordCount != null
+      ? (typeof opts.recordCount === 'function' ? opts.recordCount(data) : opts.recordCount)
+      : Array.isArray(data) ? data.length
+      : (topicArticleCount
+        ?? data?.events?.length ?? data?.earthquakes?.length ?? data?.outages?.length
         ?? data?.fireDetections?.length ?? data?.anomalies?.length ?? data?.threats?.length
         ?? data?.quotes?.length ?? data?.stablecoins?.length
         ?? data?.cables?.length ?? 0);

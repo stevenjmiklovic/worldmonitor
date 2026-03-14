@@ -63,7 +63,8 @@
     "geoHubs": "Geopolitical Hotspots",
     "polymarket": "Förutsägelser",
     "climate": "Klimatanomalier",
-    "liveWebcams": "Webbkameror",
+    "liveYouTube": "Webbkameror",
+    "pinnedWebcams": "Pinned Webcams",
     "securityAdvisories": "Säkerhetsvarningar",
     "orefSirens": "Israel Sirens",
     "telegramIntel": "Telegram Underrättelser",
@@ -1059,7 +1060,9 @@
       "filterAlerts": "Varningar",
       "filterOsint": "OSINT",
       "filterPolitics": "Politik",
-      "filterMiddleeast": "Mellanöstern"
+      "filterMiddleeast": "Mellanöstern",
+      "live": "LIVE",
+      "viewSource": "Visa källa"
     },
     "investments": {
       "infoTooltip": "Databas över Saudiarabien och Förenade Arabemiratens utländska direktinvesteringar i global kritisk infrastruktur. Klicka på en rad för att flyga till investeringen på kartan.",
@@ -1862,7 +1865,12 @@
       "usniIntel": "USNI Intel",
       "usniSource": "Source: USNI News Fleet Tracker",
       "approximatePosition": "Position approximate — based on USNI weekly report, not real-time AIS.",
-      "darkDescription": "⚠ Fartyget har blivit mörkt - AIS-signal förlorad. Kan indikera känsliga operationer."
+      "darkDescription": "⚠ Fartyget har blivit mörkt - AIS-signal förlorad. Kan indikera känsliga operationer.",
+      "recentTracking": "Recent Tracking",
+      "lastReport": "LATEST",
+      "nearChokepoint": "NEAR CHOKEPOINT",
+      "nearBase": "NEAR BASE",
+      "lastSeen": "LAST SEEN"
     },
     "militaryCluster": {
       "flightActivity": {

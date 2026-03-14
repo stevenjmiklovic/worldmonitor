@@ -275,7 +275,8 @@
     "techReadiness": "Индекс технологической готовности",
     "gccInvestments": "Инвестиции стран Залива",
     "geoHubs": "Геополитические хабы",
-    "liveWebcams": "Веб-камеры",
+    "liveYouTube": "Веб-камеры",
+    "pinnedWebcams": "Pinned Webcams",
     "gulfEconomies": "Экономика Залива",
     "gulfIndices": "Индексы Залива",
     "gulfCurrencies": "Валюты Залива",
@@ -1531,7 +1532,9 @@
       "filterAlerts": "Оповещения",
       "filterOsint": "OSINT",
       "filterPolitics": "Политика",
-      "filterMiddleeast": "Ближний Восток"
+      "filterMiddleeast": "Ближний Восток",
+      "live": "ПРЯМОЙ ЭФИР",
+      "viewSource": "Посмотреть источник"
     },
     "investments": {
       "infoTooltip": "База данных прямых иностранных инвестиций Саудовской Аравии и ОАЭ в мировую критическую инфраструктуру. Нажмите на строку для перехода к инвестиции на карте.",
@@ -2074,7 +2077,12 @@
       "usniIntel": "USNI Intel",
       "usniSource": "Source: USNI News Fleet Tracker",
       "approximatePosition": "Position approximate — based on USNI weekly report, not real-time AIS.",
-      "darkDescription": "⚠ Судно ушло в тёмный режим — сигнал AIS потерян. Может указывать на секретные операции."
+      "darkDescription": "⚠ Судно ушло в тёмный режим — сигнал AIS потерян. Может указывать на секретные операции.",
+      "recentTracking": "Recent Tracking",
+      "lastReport": "LATEST",
+      "nearChokepoint": "NEAR CHOKEPOINT",
+      "nearBase": "NEAR BASE",
+      "lastSeen": "LAST SEEN"
     },
     "militaryCluster": {
       "flightActivity": {

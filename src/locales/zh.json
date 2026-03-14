@@ -275,7 +275,8 @@
     "techReadiness": "科技就绪指数",
     "gccInvestments": "GCC投资",
     "geoHubs": "地缘政治枢纽",
-    "liveWebcams": "实时摄像头",
+    "liveYouTube": "实时摄像头",
+    "pinnedWebcams": "Pinned Webcams",
     "gulfEconomies": "海湾经济",
     "gulfIndices": "海湾指数",
     "gulfCurrencies": "海湾货币",
@@ -1531,7 +1532,9 @@
       "filterAlerts": "警报",
       "filterOsint": "OSINT",
       "filterPolitics": "政治",
-      "filterMiddleeast": "中东"
+      "filterMiddleeast": "中东",
+      "live": "直播",
+      "viewSource": "查看来源"
     },
     "investments": {
       "infoTooltip": "沙特阿拉伯和阿联酋在全球关键基础设施领域的对外直接投资数据库。点击某行可在地图上飞到该投资所在位置。",
@@ -2074,7 +2077,12 @@
       "usniIntel": "USNI Intel",
       "usniSource": "Source: USNI News Fleet Tracker",
       "approximatePosition": "Position approximate — based on USNI weekly report, not real-time AIS.",
-      "darkDescription": "⚠ 舰艇进入暗航状态 - AIS信号丢失。可能表明正在执行敏感任务。"
+      "darkDescription": "⚠ 舰艇进入暗航状态 - AIS信号丢失。可能表明正在执行敏感任务。",
+      "recentTracking": "Recent Tracking",
+      "lastReport": "LATEST",
+      "nearChokepoint": "NEAR CHOKEPOINT",
+      "nearBase": "NEAR BASE",
+      "lastSeen": "LAST SEEN"
     },
     "militaryCluster": {
       "flightActivity": {

@@ -275,7 +275,8 @@
     "techReadiness": "Индекс на технологическа готовност",
     "gccInvestments": "GCC инвестиции",
     "geoHubs": "Геополитични центрове",
-    "liveWebcams": "Живи уеб камери",
+    "liveYouTube": "Живи уеб камери",
+    "pinnedWebcams": "Pinned Webcams",
     "gulfEconomies": "Икономики на залива",
     "gulfIndices": "Индекси на залива",
     "gulfCurrencies": "Валути на залива",
@@ -1531,7 +1532,9 @@
       "filterAlerts": "Алерти",
       "filterOsint": "OSINT",
       "filterPolitics": "Политика",
-      "filterMiddleeast": "Близкия изток"
+      "filterMiddleeast": "Близкия изток",
+      "live": "НА ЖИВО",
+      "viewSource": "Виж източника"
     },
     "investments": {
       "infoTooltip": "База данни на Саудитска Арабия и UAE преки чужди инвестиции в глобална критична инфраструктура. Кликнете на ред, за да летите на инвестицията на карта.",
@@ -2074,7 +2077,12 @@
       "usniIntel": "USNI Intel",
       "usniSource": "Източник: USNI новини Fleet Tracker",
       "approximatePosition": "Позиция приблизителна — на базата на USNI седмичен доклад, не реално време AIS.",
-      "darkDescription": "⚠ Кораб е отишло тъмно - AIS сигнал загубен. Може да указва на чувствителни операции."
+      "darkDescription": "⚠ Кораб е отишло тъмно - AIS сигнал загубен. Може да указва на чувствителни операции.",
+      "recentTracking": "Recent Tracking",
+      "lastReport": "LATEST",
+      "nearChokepoint": "NEAR CHOKEPOINT",
+      "nearBase": "NEAR BASE",
+      "lastSeen": "LAST SEEN"
     },
     "militaryCluster": {
       "flightActivity": {

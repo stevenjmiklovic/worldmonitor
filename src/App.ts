@@ -210,6 +210,29 @@ export class App {
         STORAGE_KEYS.panels,
         DEFAULT_PANELS
       );
+
+      // One-time migration: preserve user preferences across panel key renames.
+      const PANEL_KEY_RENAMES_MIGRATION_KEY = 'worldmonitor-panel-key-renames-v2.6';
+      if (!localStorage.getItem(PANEL_KEY_RENAMES_MIGRATION_KEY)) {
+        const keyRenames: Array<[string, string]> = [
+          ['live-youtube', 'live-webcams'],
+          ['pinned-webcams', 'windy-webcams'],
+        ];
+        let migrated = false;
+        for (const [legacyKey, nextKey] of keyRenames) {
+          if (!panelSettings[legacyKey] || panelSettings[nextKey]) continue;
+          panelSettings[nextKey] = {
+            ...DEFAULT_PANELS[nextKey],
+            ...panelSettings[legacyKey],
+            name: DEFAULT_PANELS[nextKey]?.name ?? panelSettings[legacyKey].name,
+          };
+          delete panelSettings[legacyKey];
+          migrated = true;
+        }
+        if (migrated) saveToStorage(STORAGE_KEYS.panels, panelSettings);
+        localStorage.setItem(PANEL_KEY_RENAMES_MIGRATION_KEY, 'done');
+      }
+
       // Merge in any new panels that didn't exist when settings were saved
       for (const [key, config] of Object.entries(DEFAULT_PANELS)) {
         if (!(key in panelSettings)) {

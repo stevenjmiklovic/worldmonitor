@@ -18,6 +18,8 @@ const crypto = require('crypto');
 const v8 = require('v8');
 const { WebSocketServer, WebSocket } = require('ws');
 
+const httpsKeepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 6, timeout: 60_000 });
+
 function requireShared(name) {
   const candidates = [path.join(__dirname, '..', 'shared', name), path.join(__dirname, 'shared', name)];
   for (const p of candidates) { try { return require(p); } catch {} }
@@ -274,37 +276,60 @@ function safeEnd(res, statusCode, headers, body) {
   }
 }
 
-// gzip compress & send a response (reduces egress ~80% for JSON)
+function _acceptsEncoding(header, encoding) {
+  if (!header) return false;
+  const tokens = header.split(',');
+  for (const token of tokens) {
+    const parts = token.trim().split(';');
+    if (parts[0].trim().toLowerCase() !== encoding) continue;
+    const qPart = parts.find(p => p.trim().startsWith('q='));
+    if (qPart && parseFloat(qPart.trim().substring(2)) === 0) return false;
+    return true;
+  }
+  return false;
+}
+
+function _varyHeader(res) {
+  const existing = String(res.getHeader('vary') || '');
+  return existing.toLowerCase().includes('accept-encoding')
+    ? existing
+    : (existing ? `${existing}, Accept-Encoding` : 'Accept-Encoding');
+}
+
+// Compress & send a response (Brotli preferred ~15-20% smaller than gzip on JSON)
 function sendCompressed(req, res, statusCode, headers, body) {
   if (res.headersSent || res.writableEnded) return;
-  const acceptEncoding = req.headers['accept-encoding'] || '';
-  if (acceptEncoding.includes('gzip')) {
-    zlib.gzip(typeof body === 'string' ? Buffer.from(body) : body, (err, compressed) => {
+  const ae = req.headers['accept-encoding'] || '';
+  const buf = typeof body === 'string' ? Buffer.from(body) : body;
+  if (_acceptsEncoding(ae, 'br')) {
+    zlib.brotliCompress(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }, (err, compressed) => {
       if (err || res.headersSent || res.writableEnded) {
         safeEnd(res, statusCode, headers, body);
         return;
       }
-      const existingVary = String(res.getHeader('vary') || '');
-      const vary = existingVary.toLowerCase().includes('accept-encoding')
-        ? existingVary
-        : (existingVary ? `${existingVary}, Accept-Encoding` : 'Accept-Encoding');
-      safeEnd(res, statusCode, { ...headers, 'Content-Encoding': 'gzip', 'Vary': vary }, compressed);
+      safeEnd(res, statusCode, { ...headers, 'Content-Encoding': 'br', 'Vary': _varyHeader(res) }, compressed);
+    });
+  } else if (_acceptsEncoding(ae, 'gzip')) {
+    zlib.gzip(buf, (err, compressed) => {
+      if (err || res.headersSent || res.writableEnded) {
+        safeEnd(res, statusCode, headers, body);
+        return;
+      }
+      safeEnd(res, statusCode, { ...headers, 'Content-Encoding': 'gzip', 'Vary': _varyHeader(res) }, compressed);
     });
   } else {
     safeEnd(res, statusCode, headers, body);
   }
 }
 
-// Pre-gzipped response: serve a cached gzip buffer directly (zero CPU per request)
-function sendPreGzipped(req, res, statusCode, headers, rawBody, gzippedBody) {
+// Pre-compressed response: serve cached gzip/brotli buffer directly (zero CPU per request)
+function sendPreGzipped(req, res, statusCode, headers, rawBody, gzippedBody, brotliBody) {
   if (res.headersSent || res.writableEnded) return;
-  const acceptEncoding = req.headers['accept-encoding'] || '';
-  if (acceptEncoding.includes('gzip') && gzippedBody) {
-    const existingVary = String(res.getHeader('vary') || '');
-    const vary = existingVary.toLowerCase().includes('accept-encoding')
-      ? existingVary
-      : (existingVary ? `${existingVary}, Accept-Encoding` : 'Accept-Encoding');
-    safeEnd(res, statusCode, { ...headers, 'Content-Encoding': 'gzip', 'Vary': vary }, gzippedBody);
+  const ae = req.headers['accept-encoding'] || '';
+  if (_acceptsEncoding(ae, 'br') && brotliBody) {
+    safeEnd(res, statusCode, { ...headers, 'Content-Encoding': 'br', 'Vary': _varyHeader(res) }, brotliBody);
+  } else if (_acceptsEncoding(ae, 'gzip') && gzippedBody) {
+    safeEnd(res, statusCode, { ...headers, 'Content-Encoding': 'gzip', 'Vary': _varyHeader(res) }, gzippedBody);
   } else {
     safeEnd(res, statusCode, headers, rawBody);
   }
@@ -345,6 +370,8 @@ const orefState = {
   _persistVersion: 0,
   _lastPersistedVersion: 0,
   _persistInFlight: false,
+  _alertsCache: null,  // { json, gzip, brotli }
+  _historyCache: null, // { json, gzip, brotli }
 };
 
 function loadTelegramChannels() {
@@ -686,12 +713,36 @@ async function orefFetchAlerts() {
       return sum + h.alerts.reduce((s, a) => s + (Array.isArray(a.data) ? a.data.length : 1), 0);
     }, 0);
 
+    orefPreSerializeResponses();
     orefPersistHistory().catch(() => {});
   } catch (err) {
     const stderr = err.stderr ? err.stderr.toString().trim() : '';
     orefState.lastError = redactOrefError(stderr || err.message);
     console.warn('[Relay] OREF poll error:', orefState.lastError);
+    orefPreSerializeResponses();
   }
+}
+
+function orefPreSerializeResponses() {
+  const ts = orefState.lastPollAt ? new Date(orefState.lastPollAt).toISOString() : new Date().toISOString();
+  const alertsJson = JSON.stringify({
+    configured: OREF_ENABLED,
+    alerts: orefState.lastAlerts || [],
+    historyCount24h: orefState.historyCount24h,
+    totalHistoryCount: orefState.totalHistoryCount,
+    timestamp: ts,
+    ...(orefState.lastError ? { error: orefState.lastError } : {}),
+  });
+  orefState._alertsCache = { json: alertsJson, gzip: gzipSyncBuffer(alertsJson), brotli: brotliSyncBuffer(alertsJson) };
+
+  const historyJson = JSON.stringify({
+    configured: OREF_ENABLED,
+    history: orefState.history || [],
+    historyCount24h: orefState.historyCount24h,
+    totalHistoryCount: orefState.totalHistoryCount,
+    timestamp: ts,
+  });
+  orefState._historyCache = { json: historyJson, gzip: gzipSyncBuffer(historyJson), brotli: brotliSyncBuffer(historyJson) };
 }
 
 async function orefBootstrapHistoryFromUpstream() {
@@ -2855,7 +2906,10 @@ async function fetchTheaterFlightsFromOpenSky() {
 
 async function fetchTheaterFlightsFromWingbits() {
   const apiKey = process.env.WINGBITS_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.warn('[Wingbits] WINGBITS_API_KEY not set — skipped');
+    return null;
+  }
   const areas = POSTURE_THEATERS.map((t) => ({
     alias: t.id,
     by: 'box',
@@ -2872,7 +2926,10 @@ async function fetchTheaterFlightsFromWingbits() {
       body: JSON.stringify(areas),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      console.warn(`[Wingbits] API error: ${resp.status} ${resp.statusText}`);
+      return null;
+    }
     const data = await resp.json();
     const flights = [];
     const seenIds = new Set();
@@ -2897,8 +2954,10 @@ async function fetchTheaterFlightsFromWingbits() {
         });
       }
     }
+    console.log(`[Wingbits] Fetched ${flights.length} military flights from ${data.length} areas`);
     return flights;
-  } catch {
+  } catch (err) {
+    console.warn(`[Wingbits] Fetch failed: ${err?.message || err}`);
     return null;
   }
 }
@@ -3607,9 +3666,230 @@ async function startWorldBankSeedLoop() {
   }, WB_SEED_INTERVAL_MS).unref?.();
 }
 
+const PORTWATCH_ARCGIS_BASE = 'https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/Daily_Chokepoints_Data/FeatureServer/0/query';
+const PORTWATCH_PAGE_SIZE = 2000;
+const PORTWATCH_FETCH_TIMEOUT_MS = 30000;
+const PORTWATCH_REDIS_KEY = 'supply_chain:portwatch:v1';
+const PORTWATCH_TTL = 43200;
+const PORTWATCH_SEED_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const PORTWATCH_CHOKEPOINT_NAMES = [
+  { name: 'Suez Canal', id: 'suez' },
+  { name: 'Malacca Strait', id: 'malacca_strait' },
+  { name: 'Strait of Hormuz', id: 'hormuz_strait' },
+  { name: 'Bab el-Mandeb Strait', id: 'bab_el_mandeb' },
+  { name: 'Panama Canal', id: 'panama' },
+  { name: 'Taiwan Strait', id: 'taiwan_strait' },
+  { name: 'Cape of Good Hope', id: 'cape_of_good_hope' },
+  { name: 'Gibraltar Strait', id: 'gibraltar' },
+  { name: 'Bosporus Strait', id: 'bosphorus' },
+  { name: 'Korea Strait', id: 'korea_strait' },
+  { name: 'Dover Strait', id: 'dover_strait' },
+  { name: 'Kerch Strait', id: 'kerch_strait' },
+  { name: 'Lombok Strait', id: 'lombok_strait' },
+];
+let portwatchSeedInFlight = false;
+
+function pwFormatDate(ts) {
+  const d = new Date(ts);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function pwComputeWowChangePct(history) {
+  if (history.length < 14) return 0;
+  const sorted = [...history].sort((a, b) => b.date.localeCompare(a.date));
+  let thisWeek = 0;
+  let lastWeek = 0;
+  for (let i = 0; i < 7 && i < sorted.length; i++) thisWeek += sorted[i].total;
+  for (let i = 7; i < 14 && i < sorted.length; i++) lastWeek += sorted[i].total;
+  if (lastWeek === 0) return 0;
+  return Math.round(((thisWeek - lastWeek) / lastWeek) * 1000) / 10;
+}
+
+async function pwFetchAllPages(portname, sinceEpoch) {
+  const all = [];
+  let offset = 0;
+  for (;;) {
+    const params = new URLSearchParams({
+      where: `portname='${portname.replace(/'/g, "''")}' AND date >= ${sinceEpoch}`,
+      outFields: 'date,n_tanker,n_cargo,n_total',
+      f: 'json',
+      resultOffset: String(offset),
+      resultRecordCount: String(PORTWATCH_PAGE_SIZE),
+    });
+    const resp = await fetch(`${PORTWATCH_ARCGIS_BASE}?${params}`, {
+      headers: { 'User-Agent': CHROME_UA, Accept: 'application/json' },
+      signal: AbortSignal.timeout(PORTWATCH_FETCH_TIMEOUT_MS),
+    });
+    if (!resp.ok) {
+      console.warn(`[PortWatch] ArcGIS error ${resp.status} for ${portname}`);
+      return [];
+    }
+    const body = await resp.json();
+    if (body.error) {
+      console.warn(`[PortWatch] ArcGIS query error for ${portname}: ${body.error.message}`);
+      return [];
+    }
+    if (body.features?.length) all.push(...body.features);
+    if (!body.exceededTransferLimit) break;
+    offset += PORTWATCH_PAGE_SIZE;
+  }
+  return all;
+}
+
+function pwBuildHistory(features) {
+  return features
+    .filter(f => f.attributes?.date)
+    .map(f => {
+      const a = f.attributes;
+      const tanker = Number(a.n_tanker ?? 0);
+      const cargo = Number(a.n_cargo ?? 0);
+      const total = Number(a.n_total ?? tanker + cargo);
+      return { date: pwFormatDate(a.date), tanker, cargo, other: Math.max(0, total - tanker - cargo), total };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function seedPortWatch() {
+  if (portwatchSeedInFlight) return;
+  portwatchSeedInFlight = true;
+  const t0 = Date.now();
+  try {
+    const sinceEpoch = Date.now() - 180 * 24 * 60 * 60 * 1000;
+    const result = {};
+    const CONCURRENCY = 3;
+    for (let i = 0; i < PORTWATCH_CHOKEPOINT_NAMES.length; i += CONCURRENCY) {
+      const batch = PORTWATCH_CHOKEPOINT_NAMES.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(batch.map(cp => pwFetchAllPages(cp.name, sinceEpoch)));
+      for (let j = 0; j < batch.length; j++) {
+        const outcome = settled[j];
+        if (outcome.status !== 'fulfilled' || !outcome.value.length) continue;
+        const history = pwBuildHistory(outcome.value);
+        result[batch[j].id] = { history, wowChangePct: pwComputeWowChangePct(history) };
+      }
+    }
+    if (Object.keys(result).length === 0) {
+      console.warn('[PortWatch] No data fetched — skipping');
+      return;
+    }
+    const ok = await upstashSet(PORTWATCH_REDIS_KEY, result, PORTWATCH_TTL);
+    await upstashSet('seed-meta:supply_chain:portwatch', { fetchedAt: Date.now(), recordCount: Object.keys(result).length }, 604800);
+    console.log(`[PortWatch] Seeded ${Object.keys(result).length} chokepoints (redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  } catch (e) {
+    console.warn('[PortWatch] Seed error:', e?.message || e);
+  } finally {
+    portwatchSeedInFlight = false;
+  }
+}
+
+async function startPortWatchSeedLoop() {
+  if (!UPSTASH_ENABLED) {
+    console.log('[PortWatch] Disabled (no Upstash Redis)');
+    return;
+  }
+  console.log(`[PortWatch] Seed loop starting (interval ${PORTWATCH_SEED_INTERVAL_MS / 1000 / 60 / 60}h)`);
+  seedPortWatch().catch(e => console.warn('[PortWatch] Initial seed error:', e?.message || e));
+  setInterval(() => {
+    seedPortWatch().catch(e => console.warn('[PortWatch] Seed error:', e?.message || e));
+  }, PORTWATCH_SEED_INTERVAL_MS).unref?.();
+}
+
+const CORRIDOR_RISK_API_KEY = process.env.CORRIDOR_RISK_API_KEY || '';
+const CORRIDOR_RISK_BASE_URL = 'https://api.corridorrisk.io/v1/corridors';
+const CORRIDOR_RISK_REDIS_KEY = 'supply_chain:corridorrisk:v1';
+const CORRIDOR_RISK_TTL = 7200;
+const CORRIDOR_RISK_SEED_INTERVAL_MS = 60 * 60 * 1000;
+const CORRIDOR_RISK_NAMES = [
+  { name: 'Suez', id: 'suez' },
+  { name: 'Malacca', id: 'malacca_strait' },
+  { name: 'Hormuz', id: 'hormuz_strait' },
+  { name: 'Bab el-Mandeb', id: 'bab_el_mandeb' },
+  { name: 'Panama', id: 'panama' },
+  { name: 'Taiwan', id: 'taiwan_strait' },
+  { name: 'Cape of Good Hope', id: 'cape_of_good_hope' },
+];
+let corridorRiskSeedInFlight = false;
+
+async function seedCorridorRisk() {
+  if (!CORRIDOR_RISK_API_KEY) return;
+  if (corridorRiskSeedInFlight) return;
+  corridorRiskSeedInFlight = true;
+  const t0 = Date.now();
+  try {
+    const resp = await fetch(CORRIDOR_RISK_BASE_URL, {
+      headers: {
+        Authorization: `Bearer ${CORRIDOR_RISK_API_KEY}`,
+        Accept: 'application/json',
+        'User-Agent': CHROME_UA,
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) {
+      console.warn(`[CorridorRisk] HTTP ${resp.status}`);
+      return;
+    }
+    const body = await resp.json();
+    const corridors = Array.isArray(body) ? body : body.data;
+    if (!corridors?.length) {
+      console.warn('[CorridorRisk] No corridors returned — skipping');
+      return;
+    }
+    const crNameMap = new Map(CORRIDOR_RISK_NAMES.map(c => [c.name.toLowerCase(), c.id]));
+    const result = {};
+    for (const corridor of corridors) {
+      const name = corridor.name;
+      if (!name) continue;
+      const id = crNameMap.get(name.toLowerCase());
+      if (!id) continue;
+      result[id] = {
+        riskLevel: String(corridor.risk_level ?? ''),
+        incidentCount7d: Number(corridor.incident_count_7d ?? 0),
+        disruptionPct: Number(corridor.disruption_pct ?? 0),
+      };
+    }
+    if (Object.keys(result).length === 0) {
+      console.warn('[CorridorRisk] No matching corridors — skipping');
+      return;
+    }
+    const ok = await upstashSet(CORRIDOR_RISK_REDIS_KEY, result, CORRIDOR_RISK_TTL);
+    await upstashSet('seed-meta:supply_chain:corridorrisk', { fetchedAt: Date.now(), recordCount: Object.keys(result).length }, 604800);
+    console.log(`[CorridorRisk] Seeded ${Object.keys(result).length} corridors (redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  } catch (e) {
+    console.warn('[CorridorRisk] Seed error:', e?.message || e);
+  } finally {
+    corridorRiskSeedInFlight = false;
+  }
+}
+
+async function startCorridorRiskSeedLoop() {
+  if (!UPSTASH_ENABLED) {
+    console.log('[CorridorRisk] Disabled (no Upstash Redis)');
+    return;
+  }
+  if (!CORRIDOR_RISK_API_KEY) {
+    console.log('[CorridorRisk] Disabled (no CORRIDOR_RISK_API_KEY)');
+    return;
+  }
+  console.log(`[CorridorRisk] Seed loop starting (interval ${CORRIDOR_RISK_SEED_INTERVAL_MS / 1000 / 60}min)`);
+  seedCorridorRisk().catch(e => console.warn('[CorridorRisk] Initial seed error:', e?.message || e));
+  setInterval(() => {
+    seedCorridorRisk().catch(e => console.warn('[CorridorRisk] Seed error:', e?.message || e));
+  }, CORRIDOR_RISK_SEED_INTERVAL_MS).unref?.();
+}
+
 function gzipSyncBuffer(body) {
   try {
     return zlib.gzipSync(typeof body === 'string' ? Buffer.from(body) : body);
+  } catch {
+    return null;
+  }
+}
+
+function brotliSyncBuffer(body) {
+  try {
+    return zlib.brotliCompressSync(
+      typeof body === 'string' ? Buffer.from(body) : body,
+      { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }
+    );
   } catch {
     return null;
   }
@@ -3878,8 +4158,10 @@ let lastSnapshotAt = 0;
 // Pre-serialized cache: avoids JSON.stringify + gzip per request
 let lastSnapshotJson = null;       // cached JSON string (no candidates)
 let lastSnapshotGzip = null;       // cached gzip buffer (no candidates)
+let lastSnapshotBrotli = null;     // cached brotli buffer (no candidates)
 let lastSnapshotWithCandJson = null;
 let lastSnapshotWithCandGzip = null;
+let lastSnapshotWithCandBrotli = null;
 
 // Chokepoint spatial index: bucket vessels into grid cells at ingest time
 // instead of O(chokepoints * vessels) on every snapshot
@@ -3889,13 +4171,36 @@ const vesselChokepoints = new Map(); // key: MMSI -> Set of chokepoint names
 const CHOKEPOINTS = [
   { name: 'Strait of Hormuz', lat: 26.5, lon: 56.5, radius: 2 },
   { name: 'Suez Canal', lat: 30.0, lon: 32.5, radius: 1 },
-  { name: 'Strait of Malacca', lat: 2.5, lon: 101.5, radius: 2 },
-  { name: 'Bab el-Mandeb', lat: 12.5, lon: 43.5, radius: 1.5 },
+  { name: 'Malacca Strait', lat: 2.5, lon: 101.5, radius: 2 },
+  { name: 'Bab el-Mandeb Strait', lat: 12.5, lon: 43.5, radius: 1.5 },
   { name: 'Panama Canal', lat: 9.0, lon: -79.5, radius: 1 },
   { name: 'Taiwan Strait', lat: 24.5, lon: 119.5, radius: 2 },
   { name: 'South China Sea', lat: 15.0, lon: 115.0, radius: 5 },
   { name: 'Black Sea', lat: 43.5, lon: 34.0, radius: 3 },
+  { name: 'Cape of Good Hope', lat: -34.36, lon: 18.49, radius: 2 },
+  { name: 'Gibraltar Strait', lat: 35.96, lon: -5.35, radius: 1 },
+  { name: 'Bosporus Strait', lat: 40.70, lon: 28.0, radius: 1.5 },
+  { name: 'Korea Strait', lat: 34.0, lon: 129.0, radius: 1.5 },
+  { name: 'Dover Strait', lat: 51.05, lon: 1.45, radius: 0.5 },
+  { name: 'Kerch Strait', lat: 45.33, lon: 36.60, radius: 0.5 },
+  { name: 'Lombok Strait', lat: -8.47, lon: 115.72, radius: 0.5 },
 ];
+
+function classifyVesselType(shipType) {
+  if (shipType >= 80 && shipType <= 89) return 'tanker';
+  if (shipType >= 70 && shipType <= 79) return 'cargo';
+  return 'other';
+}
+
+const chokepointCrossings = new Map();
+const transitCooldowns = new Map();
+const transitPendingEntry = new Map();
+const TRANSIT_COOLDOWN_MS = 30 * 60 * 1000;
+const TRANSIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MIN_DWELL_MS = 5 * 60 * 1000;
+const CHOKEPOINT_TRANSIT_KEY = 'supply_chain:chokepoint_transits:v1';
+const CHOKEPOINT_TRANSIT_TTL = 900;
+const CHOKEPOINT_TRANSIT_INTERVAL_MS = 10 * 60 * 1000;
 
 const NAVAL_PREFIX_RE = /^(USS|USNS|HMS|HMAS|HMCS|INS|JS|ROKS|TCG|FS|BNS|RFS|PLAN|PLA|CGC|PNS|KRI|ITS|SNS|MMSI)/i;
 
@@ -3989,15 +4294,36 @@ function updateVesselChokepoints(mmsi, lat, lon) {
   }
 
   const previous = vesselChokepoints.get(mmsi) || new Set();
+  const now = Date.now();
+
   for (const cpName of previous) {
     if (next.has(cpName)) continue;
     const bucket = chokepointBuckets.get(cpName);
     if (!bucket) continue;
     bucket.delete(mmsi);
     if (bucket.size === 0) chokepointBuckets.delete(cpName);
+
+    const pendingKey = mmsi + ':' + cpName;
+    const entryTs = transitPendingEntry.get(pendingKey);
+    if (entryTs !== undefined && now - entryTs >= MIN_DWELL_MS) {
+      const cooldownKey = mmsi + ':' + cpName;
+      const lastCrossing = transitCooldowns.get(cooldownKey);
+      if (!lastCrossing || now - lastCrossing >= TRANSIT_COOLDOWN_MS) {
+        const vessel = vessels.get(mmsi);
+        const vType = classifyVesselType(vessel?.shipType);
+        let crossings = chokepointCrossings.get(cpName);
+        if (!crossings) { crossings = []; chokepointCrossings.set(cpName, crossings); }
+        crossings.push({ mmsi, type: vType, ts: now });
+        transitCooldowns.set(cooldownKey, now);
+      }
+    }
+    transitPendingEntry.delete(pendingKey);
   }
 
   for (const cpName of next) {
+    if (!previous.has(cpName)) {
+      transitPendingEntry.set(mmsi + ':' + cpName, now);
+    }
     let bucket = chokepointBuckets.get(cpName);
     if (!bucket) {
       bucket = new Set();
@@ -4174,6 +4500,25 @@ function cleanupAggregates() {
     }
     if (bucket.size === 0) chokepointBuckets.delete(cpName);
   }
+
+  for (const [cpName, crossings] of chokepointCrossings) {
+    const filtered = crossings.filter(c => now - c.ts < TRANSIT_WINDOW_MS);
+    if (filtered.length === 0) chokepointCrossings.delete(cpName);
+    else chokepointCrossings.set(cpName, filtered);
+  }
+  for (const [key, ts] of transitCooldowns) {
+    if (now - ts > TRANSIT_COOLDOWN_MS) transitCooldowns.delete(key);
+  }
+  const pendingCutoff = 48 * 60 * 60 * 1000;
+  for (const [key, ts] of transitPendingEntry) {
+    if (now - ts > pendingCutoff) {
+      const sep = key.indexOf(':');
+      const pmsi = key.substring(0, sep);
+      const cpN = key.substring(sep + 1);
+      const memberships = vesselChokepoints.get(pmsi);
+      if (!memberships || !memberships.has(cpN)) transitPendingEntry.delete(key);
+    }
+  }
 }
 
 function detectDisruptions() {
@@ -4316,13 +4661,13 @@ function buildSnapshot() {
   const withCandPayload = { ...lastSnapshot, candidateReports: getCandidateReportsSnapshot() };
   lastSnapshotWithCandJson = JSON.stringify(withCandPayload);
 
-  // Pre-gzip both variants asynchronously (zero CPU on request path)
-  zlib.gzip(Buffer.from(lastSnapshotJson), (err, buf) => {
-    if (!err) lastSnapshotGzip = buf;
-  });
-  zlib.gzip(Buffer.from(lastSnapshotWithCandJson), (err, buf) => {
-    if (!err) lastSnapshotWithCandGzip = buf;
-  });
+  // Pre-compress both variants asynchronously (zero CPU on request path)
+  const baseBuf = Buffer.from(lastSnapshotJson);
+  const candBuf = Buffer.from(lastSnapshotWithCandJson);
+  zlib.gzip(baseBuf, (err, buf) => { if (!err) lastSnapshotGzip = buf; });
+  zlib.gzip(candBuf, (err, buf) => { if (!err) lastSnapshotWithCandGzip = buf; });
+  zlib.brotliCompress(baseBuf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }, (err, buf) => { if (!err) lastSnapshotBrotli = buf; });
+  zlib.brotliCompress(candBuf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }, (err, buf) => { if (!err) lastSnapshotWithCandBrotli = buf; });
 
   return lastSnapshot;
 }
@@ -4332,6 +4677,33 @@ setInterval(() => {
     buildSnapshot();
   }
 }, SNAPSHOT_INTERVAL_MS);
+
+async function seedChokepointTransits() {
+  const now = Date.now();
+  const transits = {};
+  for (const cp of CHOKEPOINTS) {
+    const crossings = chokepointCrossings.get(cp.name) || [];
+    const recent = crossings.filter(c => now - c.ts < TRANSIT_WINDOW_MS);
+    chokepointCrossings.set(cp.name, recent);
+    transits[cp.name] = {
+      tanker: recent.filter(c => c.type === 'tanker').length,
+      cargo: recent.filter(c => c.type === 'cargo').length,
+      other: recent.filter(c => c.type === 'other').length,
+      total: recent.length,
+    };
+  }
+  const payload = { transits, fetchedAt: now };
+  await upstashSet(CHOKEPOINT_TRANSIT_KEY, payload, CHOKEPOINT_TRANSIT_TTL);
+  await upstashSet('seed-meta:supply_chain:chokepoint_transits', { fetchedAt: now, recordCount: Object.keys(transits).length }, 604800);
+  console.log(`[Transit] Seeded ${Object.keys(transits).length} chokepoint transit counts`);
+}
+
+setTimeout(() => {
+  seedChokepointTransits().catch(err => console.error('[Transit] Initial seed error:', err.message));
+}, 30_000);
+setInterval(() => {
+  seedChokepointTransits().catch(err => console.error('[Transit] Seed error:', err.message));
+}, CHOKEPOINT_TRANSIT_INTERVAL_MS).unref?.();
 
 // UCDP GED Events cache (persistent in-memory — Railway advantage)
 const UCDP_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -4531,6 +4903,7 @@ const OPENSKY_BBOX_DECIMALS = OPENSKY_BBOX_QUANT_STEP > 0
   : 6;
 const OPENSKY_DEDUP_EMPTY_RESPONSE_JSON = JSON.stringify({ states: [], time: 0 });
 const OPENSKY_DEDUP_EMPTY_RESPONSE_GZIP = gzipSyncBuffer(OPENSKY_DEDUP_EMPTY_RESPONSE_JSON);
+const OPENSKY_DEDUP_EMPTY_RESPONSE_BROTLI = brotliSyncBuffer(OPENSKY_DEDUP_EMPTY_RESPONSE_JSON);
 const rssResponseCache = new Map(); // key: feed URL → { data, contentType, timestamp, statusCode }
 const rssInFlight = new Map(); // key: feed URL → Promise (dedup concurrent requests)
 const rssFailureCount = new Map(); // key: feed URL → consecutive failure count (for exponential backoff)
@@ -4570,6 +4943,7 @@ function cacheOpenSkyPositive(cacheKey, data) {
   setBoundedCacheEntry(openskyResponseCache, cacheKey, {
     data,
     gzip: gzipSyncBuffer(data),
+    brotli: brotliSyncBuffer(data),
     timestamp: Date.now(),
   }, OPENSKY_CACHE_MAX_ENTRIES);
 }
@@ -4582,6 +4956,7 @@ function cacheOpenSkyNegative(cacheKey, status) {
     timestamp: now,
     body,
     gzip: gzipSyncBuffer(body),
+    brotli: brotliSyncBuffer(body),
   }, OPENSKY_NEGATIVE_CACHE_MAX_ENTRIES);
 }
 
@@ -4829,10 +5204,25 @@ async function _fetchOpenSkyToken(clientId, clientSecret) {
 }
 
 // Promisified upstream OpenSky fetch (single request)
+function _collectDecompressed(response) {
+  return new Promise((resolve, reject) => {
+    const enc = (response.headers['content-encoding'] || '').trim().toLowerCase();
+    let stream = response;
+    if (enc === 'gzip' || enc === 'x-gzip') stream = response.pipe(zlib.createGunzip());
+    else if (enc === 'deflate') stream = response.pipe(zlib.createInflate());
+    else if (enc === 'br') stream = response.pipe(zlib.createBrotliDecompress());
+    const chunks = [];
+    stream.on('data', chunk => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks).toString()));
+    stream.on('error', (err) => reject(new Error(`decompression failed (${enc}): ${err.message}`)));
+  });
+}
+
 function _openskyRawFetch(url, token) {
   const parsed = new URL(url);
   const reqHeaders = {
     'Accept': 'application/json',
+    'Accept-Encoding': 'gzip, deflate, br',
     'User-Agent': 'WorldMonitor/1.0',
     'Authorization': `Bearer ${token}`,
   };
@@ -4847,9 +5237,9 @@ function _openskyRawFetch(url, token) {
           headers: reqHeaders,
           timeout: 15000,
         }, (response) => {
-          let data = '';
-          response.on('data', chunk => data += chunk);
-          response.on('end', () => resolve({ status: response.statusCode || 502, data }));
+          _collectDecompressed(response)
+            .then(data => resolve({ status: response.statusCode || 502, data }))
+            .catch(err => resolve({ status: 0, data: null, error: err }));
         });
         request.on('error', (err) => resolve({ status: 0, data: null, error: err }));
         request.on('timeout', () => { request.destroy(); resolve({ status: 504, data: null, error: new Error('timeout') }); });
@@ -4861,11 +5251,12 @@ function _openskyRawFetch(url, token) {
     const request = https.get(url, {
       family: 4,
       headers: reqHeaders,
+      agent: httpsKeepAliveAgent,
       timeout: 15000,
     }, (response) => {
-      let data = '';
-      response.on('data', chunk => data += chunk);
-      response.on('end', () => resolve({ status: response.statusCode || 502, data }));
+      _collectDecompressed(response)
+        .then(data => resolve({ status: response.statusCode || 502, data }))
+        .catch(err => resolve({ status: 0, data: null, error: err }));
     });
     request.on('error', (err) => resolve({ status: 0, data: null, error: err }));
     request.on('timeout', () => { request.destroy(); resolve({ status: 504, data: null, error: new Error('timeout') }); });
@@ -4919,7 +5310,7 @@ async function handleOpenSkyRequest(req, res, PORT) {
         'Cache-Control': 'public, max-age=30',
         'CDN-Cache-Control': 'public, max-age=15',
         'X-Cache': 'HIT',
-      }, cached.data, cached.gzip);
+      }, cached.data, cached.gzip, cached.brotli);
     }
 
     // 2. Check negative cache — prevents retry storms when upstream returns 429/5xx
@@ -4932,7 +5323,7 @@ async function handleOpenSkyRequest(req, res, PORT) {
         'Cache-Control': 'no-cache',
         'CDN-Cache-Control': 'no-store',
         'X-Cache': 'NEG',
-      }, negCached.body, negCached.gzip);
+      }, negCached.body, negCached.gzip, negCached.brotli);
     }
 
     // 2b. Global 429 cooldown — blocks ALL bbox queries when OpenSky is rate-limiting.
@@ -4964,7 +5355,7 @@ async function handleOpenSkyRequest(req, res, PORT) {
           'Cache-Control': 'public, max-age=30',
           'CDN-Cache-Control': 'public, max-age=15',
           'X-Cache': 'DEDUP',
-        }, deduped.data, deduped.gzip);
+        }, deduped.data, deduped.gzip, deduped.brotli);
       }
       const dedupNeg = openskyNegativeCache.get(cacheKey);
       if (dedupNeg && Date.now() - dedupNeg.timestamp < OPENSKY_NEGATIVE_CACHE_TTL_MS) {
@@ -4975,7 +5366,7 @@ async function handleOpenSkyRequest(req, res, PORT) {
           'Cache-Control': 'no-cache',
           'CDN-Cache-Control': 'no-store',
           'X-Cache': 'DEDUP-NEG',
-        }, dedupNeg.body, dedupNeg.gzip);
+        }, dedupNeg.body, dedupNeg.gzip, dedupNeg.brotli);
       }
       // In-flight completed but no cache entry (upstream failed) — return empty instead of thundering herd
       incrementRelayMetric('openskyDedupEmpty');
@@ -4984,7 +5375,7 @@ async function handleOpenSkyRequest(req, res, PORT) {
         'Cache-Control': 'no-cache',
         'CDN-Cache-Control': 'no-store',
         'X-Cache': 'DEDUP-EMPTY',
-      }, OPENSKY_DEDUP_EMPTY_RESPONSE_JSON, OPENSKY_DEDUP_EMPTY_RESPONSE_GZIP);
+      }, OPENSKY_DEDUP_EMPTY_RESPONSE_JSON, OPENSKY_DEDUP_EMPTY_RESPONSE_GZIP, OPENSKY_DEDUP_EMPTY_RESPONSE_BROTLI);
     }
 
     incrementRelayMetric('openskyMiss');
@@ -5049,7 +5440,7 @@ async function handleOpenSkyRequest(req, res, PORT) {
 
     // Serve stale cache on network errors
     if (result.error && cached) {
-      return sendPreGzipped(req, res, 200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, cached.data, cached.gzip);
+      return sendPreGzipped(req, res, 200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store', 'X-Cache': 'STALE' }, cached.data, cached.gzip, cached.brotli);
     }
 
     const responseData = result.data || JSON.stringify({ error: result.error?.message || 'upstream error', time: Date.now(), states: null });
@@ -6012,13 +6403,14 @@ const server = http.createServer(async (req, res) => {
     const includeCandidates = url.searchParams.get('candidates') === 'true';
     const json = includeCandidates ? lastSnapshotWithCandJson : lastSnapshotJson;
     const gz = includeCandidates ? lastSnapshotWithCandGzip : lastSnapshotGzip;
+    const br = includeCandidates ? lastSnapshotWithCandBrotli : lastSnapshotBrotli;
 
     if (json) {
       sendPreGzipped(req, res, 200, {
         'Content-Type': 'application/json',
         'Cache-Control': 'public, max-age=2',
         'CDN-Cache-Control': 'public, max-age=10',
-      }, json, gz);
+      }, json, gz, br);
     } else {
       // Cold start fallback
       const payload = { ...lastSnapshot, candidateReports: includeCandidates ? getCandidateReportsSnapshot() : [] };
@@ -6372,28 +6764,44 @@ const server = http.createServer(async (req, res) => {
       }
     }
   } else if (pathname === '/oref/alerts') {
-    sendCompressed(req, res, 200, {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=5, s-maxage=5, stale-while-revalidate=3',
-    }, JSON.stringify({
-      configured: OREF_ENABLED,
-      alerts: orefState.lastAlerts || [],
-      historyCount24h: orefState.historyCount24h,
-      totalHistoryCount: orefState.totalHistoryCount,
-      timestamp: orefState.lastPollAt ? new Date(orefState.lastPollAt).toISOString() : new Date().toISOString(),
-      ...(orefState.lastError ? { error: orefState.lastError } : {}),
-    }));
+    const c = orefState._alertsCache;
+    if (c) {
+      sendPreGzipped(req, res, 200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=5, s-maxage=5, stale-while-revalidate=3',
+      }, c.json, c.gzip, c.brotli);
+    } else {
+      sendCompressed(req, res, 200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=5, s-maxage=5, stale-while-revalidate=3',
+      }, JSON.stringify({
+        configured: OREF_ENABLED,
+        alerts: orefState.lastAlerts || [],
+        historyCount24h: orefState.historyCount24h,
+        totalHistoryCount: orefState.totalHistoryCount,
+        timestamp: orefState.lastPollAt ? new Date(orefState.lastPollAt).toISOString() : new Date().toISOString(),
+        ...(orefState.lastError ? { error: orefState.lastError } : {}),
+      }));
+    }
   } else if (pathname === '/oref/history') {
-    sendCompressed(req, res, 200, {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=30, s-maxage=30, stale-while-revalidate=10',
-    }, JSON.stringify({
-      configured: OREF_ENABLED,
-      history: orefState.history || [],
-      historyCount24h: orefState.historyCount24h,
-      totalHistoryCount: orefState.totalHistoryCount,
-      timestamp: orefState.lastPollAt ? new Date(orefState.lastPollAt).toISOString() : new Date().toISOString(),
-    }));
+    const c = orefState._historyCache;
+    if (c) {
+      sendPreGzipped(req, res, 200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=30, s-maxage=30, stale-while-revalidate=10',
+      }, c.json, c.gzip, c.brotli);
+    } else {
+      sendCompressed(req, res, 200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=30, s-maxage=30, stale-while-revalidate=10',
+      }, JSON.stringify({
+        configured: OREF_ENABLED,
+        history: orefState.history || [],
+        historyCount24h: orefState.historyCount24h,
+        totalHistoryCount: orefState.totalHistoryCount,
+        timestamp: orefState.lastPollAt ? new Date(orefState.lastPollAt).toISOString() : new Date().toISOString(),
+      }));
+    }
   } else if (pathname.startsWith('/ucdp-events')) {
     handleUcdpEventsRequest(req, res);
   } else if (pathname.startsWith('/opensky')) {
@@ -6537,6 +6945,8 @@ server.listen(PORT, () => {
   startWorldBankSeedLoop();
   startSatelliteSeedLoop();
   startTechEventsSeedLoop();
+  startPortWatchSeedLoop();
+  startCorridorRiskSeedLoop();
 });
 
 wss.on('connection', (ws, req) => {

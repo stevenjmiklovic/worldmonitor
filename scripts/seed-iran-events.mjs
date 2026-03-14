@@ -145,6 +145,10 @@ const LOCATION_COORDS = {
   'empty quarter': { lat: 22.5200, lon: 54.0000 },
   'ovadia':        { lat: 31.4700, lon: 34.5300 },
   'shin bet':      { lat: 31.7683, lon: 35.2137 },
+  'kharg':         { lat: 29.2635, lon: 50.3273 },
+  'qom':           { lat: 34.6401, lon: 50.8764 },
+  'andisheh':      { lat: 35.7050, lon: 51.0000 },
+  'ankara':        { lat: 39.9334, lon: 32.8597 },
 };
 
 const CATEGORY_MAP = {

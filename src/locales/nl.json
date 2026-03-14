@@ -63,7 +63,8 @@
     "geoHubs": "Geopolitical Hotspots",
     "polymarket": "Voorspellingen",
     "climate": "Klimaatafwijkingen",
-    "liveWebcams": "Live Webcams",
+    "liveYouTube": "Live Webcams",
+    "pinnedWebcams": "Pinned Webcams",
     "securityAdvisories": "Veiligheidsadviezen",
     "orefSirens": "Israel Sirens",
     "telegramIntel": "Telegram Inlichtingen",
@@ -1059,7 +1060,9 @@
       "filterAlerts": "Waarschuwingen",
       "filterOsint": "OSINT",
       "filterPolitics": "Politiek",
-      "filterMiddleeast": "Midden-Oosten"
+      "filterMiddleeast": "Midden-Oosten",
+      "live": "LIVE",
+      "viewSource": "Bron bekijken"
     },
     "investments": {
       "infoTooltip": "Database van directe buitenlandse investeringen van Saoedi-Arabië en de VAE in mondiale kritieke infrastructuur. Klik op een rij om naar de investering op de kaart te vliegen.",
@@ -1862,7 +1865,12 @@
       "usniIntel": "USNI Intel",
       "usniSource": "Source: USNI News Fleet Tracker",
       "approximatePosition": "Position approximate — based on USNI weekly report, not real-time AIS.",
-      "darkDescription": "⚠ Het schip is donker geworden - AIS-signaal verloren. Kan duiden op gevoelige operaties."
+      "darkDescription": "⚠ Het schip is donker geworden - AIS-signaal verloren. Kan duiden op gevoelige operaties.",
+      "recentTracking": "Recent Tracking",
+      "lastReport": "LATEST",
+      "nearChokepoint": "NEAR CHOKEPOINT",
+      "nearBase": "NEAR BASE",
+      "lastSeen": "LAST SEEN"
     },
     "militaryCluster": {
       "flightActivity": {

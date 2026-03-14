@@ -47,6 +47,30 @@ describe('ChokepointInfo proto has ais_disruptions field', () => {
     assert.match(proto, /repeated string affected_routes\s*=\s*9/);
     assert.match(proto, /string description\s*=\s*10/);
   });
+
+  it('declares directions field at 12', () => {
+    assert.match(proto, /repeated string directions\s*=\s*12/);
+  });
+
+  it('declares directional_dwt field at 13 (deprecated)', () => {
+    assert.match(proto, /repeated DirectionalDwt directional_dwt\s*=\s*13/);
+  });
+
+  it('declares transit_summary field at 14', () => {
+    assert.match(proto, /TransitSummary transit_summary\s*=\s*14/);
+  });
+
+  it('has TransitSummary message', () => {
+    assert.match(proto, /message TransitSummary/);
+  });
+
+  it('has TransitDayCount message', () => {
+    assert.match(proto, /message TransitDayCount/);
+  });
+
+  it('has DirectionalDwt message', () => {
+    assert.match(proto, /message DirectionalDwt/);
+  });
 });
 
 // ========================================================================
@@ -65,6 +89,38 @@ describe('Generated types include aisDisruptions', () => {
   it('server ChokepointInfo has aisDisruptions: number', () => {
     assert.match(serverSrc, /aisDisruptions:\s*number/,
       'Server type must include aisDisruptions field');
+  });
+
+  it('client has TransitSummary interface', () => {
+    assert.match(clientSrc, /interface TransitSummary/);
+  });
+
+  it('client has TransitDayCount interface', () => {
+    assert.match(clientSrc, /interface TransitDayCount/);
+  });
+
+  it('client has DirectionalDwt interface', () => {
+    assert.match(clientSrc, /interface DirectionalDwt/);
+  });
+
+  it('client ChokepointInfo has directions field', () => {
+    assert.match(clientSrc, /directions:\s*string\[\]/);
+  });
+
+  it('client ChokepointInfo has transitSummary field', () => {
+    assert.match(clientSrc, /transitSummary:\s*TransitSummary/);
+  });
+
+  it('server has TransitSummary interface', () => {
+    assert.match(serverSrc, /interface TransitSummary/);
+  });
+
+  it('server ChokepointInfo has directions field', () => {
+    assert.match(serverSrc, /directions:\s*string\[\]/);
+  });
+
+  it('server ChokepointInfo has transitSummary field', () => {
+    assert.match(serverSrc, /transitSummary:\s*TransitSummary/);
   });
 });
 
@@ -100,24 +156,32 @@ describe('Cache keys bumped to v2', () => {
   const chokepointSrc = readSrc('server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts');
   const mineralsSrc = readSrc('server/worldmonitor/supply-chain/v1/get-critical-minerals.ts');
 
-  it('bootstrap.js chokepoints key is v2', () => {
-    assert.match(bootstrapSrc, /chokepoints:\s*'supply_chain:chokepoints:v2'/);
+  it('bootstrap.js chokepoints key is v4', () => {
+    assert.match(bootstrapSrc, /chokepoints:\s*'supply_chain:chokepoints:v4'/);
   });
 
   it('bootstrap.js minerals key is v2', () => {
     assert.match(bootstrapSrc, /minerals:\s*'supply_chain:minerals:v2'/);
   });
 
-  it('cache-keys.ts chokepoints key is v2', () => {
-    assert.match(cacheKeysSrc, /chokepoints:\s*'supply_chain:chokepoints:v2'/);
+  it('bootstrap.js has chokepointTransits key', () => {
+    assert.match(bootstrapSrc, /chokepointTransits:\s*'supply_chain:chokepoint_transits:v1'/);
+  });
+
+  it('cache-keys.ts chokepoints key is v4', () => {
+    assert.match(cacheKeysSrc, /chokepoints:\s*'supply_chain:chokepoints:v4'/);
+  });
+
+  it('cache-keys.ts has chokepointTransits key', () => {
+    assert.match(cacheKeysSrc, /chokepointTransits:\s*'supply_chain:chokepoint_transits:v1'/);
   });
 
   it('cache-keys.ts minerals key is v2', () => {
     assert.match(cacheKeysSrc, /minerals:\s*'supply_chain:minerals:v2'/);
   });
 
-  it('chokepoint handler uses v2 redis key', () => {
-    assert.match(chokepointSrc, /REDIS_CACHE_KEY\s*=\s*'supply_chain:chokepoints:v2'/);
+  it('chokepoint handler uses v4 redis key', () => {
+    assert.match(chokepointSrc, /REDIS_CACHE_KEY\s*=\s*'supply_chain:chokepoints:v4'/);
   });
 
   it('minerals handler uses v2 redis key', () => {
@@ -169,13 +233,20 @@ describe('Chokepoint handler v2 changes', () => {
       'Old vague description removed');
   });
 
-  it('includes all 6 chokepoints (Suez, Malacca, Hormuz, Bab el-Mandeb, Panama, Taiwan)', () => {
+  it('includes all 13 chokepoints', () => {
     assert.match(src, /id:\s*'suez'/);
-    assert.match(src, /id:\s*'malacca'/);
-    assert.match(src, /id:\s*'hormuz'/);
+    assert.match(src, /id:\s*'malacca_strait'/);
+    assert.match(src, /id:\s*'hormuz_strait'/);
     assert.match(src, /id:\s*'bab_el_mandeb'/);
     assert.match(src, /id:\s*'panama'/);
-    assert.match(src, /id:\s*'taiwan'/);
+    assert.match(src, /id:\s*'taiwan_strait'/);
+    assert.match(src, /id:\s*'cape_of_good_hope'/);
+    assert.match(src, /id:\s*'gibraltar'/);
+    assert.match(src, /id:\s*'bosphorus'/);
+    assert.match(src, /id:\s*'korea_strait'/);
+    assert.match(src, /id:\s*'dover_strait'/);
+    assert.match(src, /id:\s*'kerch_strait'/);
+    assert.match(src, /id:\s*'lombok_strait'/);
   });
 });
 
@@ -532,14 +603,21 @@ import { CHOKEPOINTS, THREAT_CONFIG_LAST_REVIEWED } from '../server/worldmonitor
 const cpById = Object.fromEntries(CHOKEPOINTS.map(cp => [cp.id, cp]));
 
 describe('Chokepoint threat level config', () => {
-  it('exports all 6 chokepoints', () => {
-    assert.equal(CHOKEPOINTS.length, 6);
+  it('exports all 13 chokepoints', () => {
+    assert.equal(CHOKEPOINTS.length, 13);
     assert.ok(cpById.suez);
-    assert.ok(cpById.malacca);
-    assert.ok(cpById.hormuz);
+    assert.ok(cpById.malacca_strait);
+    assert.ok(cpById.hormuz_strait);
     assert.ok(cpById.bab_el_mandeb);
     assert.ok(cpById.panama);
-    assert.ok(cpById.taiwan);
+    assert.ok(cpById.korea_strait);
+    assert.ok(cpById.dover_strait);
+    assert.ok(cpById.kerch_strait);
+    assert.ok(cpById.lombok_strait);
+    assert.ok(cpById.taiwan_strait);
+    assert.ok(cpById.cape_of_good_hope);
+    assert.ok(cpById.gibraltar);
+    assert.ok(cpById.bosphorus);
   });
 
   it('every entry has required fields', () => {
@@ -556,7 +634,7 @@ describe('Chokepoint threat level config', () => {
   });
 
   it('Hormuz uses war_zone threat level', () => {
-    assert.equal(cpById.hormuz.threatLevel, 'war_zone');
+    assert.equal(cpById.hormuz_strait.threatLevel, 'war_zone');
   });
 
   it('Bab el-Mandeb uses critical threat level', () => {
@@ -568,16 +646,16 @@ describe('Chokepoint threat level config', () => {
   });
 
   it('Taiwan uses elevated threat level', () => {
-    assert.equal(cpById.taiwan.threatLevel, 'elevated');
+    assert.equal(cpById.taiwan_strait.threatLevel, 'elevated');
   });
 
   it('Malacca and Panama use normal threat level', () => {
-    assert.equal(cpById.malacca.threatLevel, 'normal');
+    assert.equal(cpById.malacca_strait.threatLevel, 'normal');
     assert.equal(cpById.panama.threatLevel, 'normal');
   });
 
   it('Hormuz threatDescription mentions Iran-Israel war', () => {
-    assert.ok(cpById.hormuz.threatDescription.includes('Iran-Israel'));
+    assert.ok(cpById.hormuz_strait.threatDescription.includes('Iran-Israel'));
   });
 
   it('Bab el-Mandeb threatDescription mentions Houthi', () => {
@@ -585,13 +663,13 @@ describe('Chokepoint threat level config', () => {
   });
 
   it('Malacca and Panama have empty threatDescription', () => {
-    assert.equal(cpById.malacca.threatDescription, '');
+    assert.equal(cpById.malacca_strait.threatDescription, '');
     assert.equal(cpById.panama.threatDescription, '');
   });
 
   it('Hormuz areaKeywords include gulf of oman and strait of hormuz', () => {
-    assert.ok(cpById.hormuz.areaKeywords.includes('gulf of oman'));
-    assert.ok(cpById.hormuz.areaKeywords.includes('strait of hormuz'));
+    assert.ok(cpById.hormuz_strait.areaKeywords.includes('gulf of oman'));
+    assert.ok(cpById.hormuz_strait.areaKeywords.includes('strait of hormuz'));
   });
 
   it('Bab el-Mandeb areaKeywords include houthi and yemen', () => {
@@ -600,7 +678,7 @@ describe('Chokepoint threat level config', () => {
   });
 
   it('Taiwan areaKeywords include south china sea', () => {
-    assert.ok(cpById.taiwan.areaKeywords.includes('south china sea'));
+    assert.ok(cpById.taiwan_strait.areaKeywords.includes('south china sea'));
   });
 
   it('descriptions reference JWC for listed areas', () => {

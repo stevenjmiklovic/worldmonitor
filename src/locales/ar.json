@@ -270,7 +270,8 @@
     "techReadiness": "مؤشر الجاهزية التقنية",
     "gccInvestments": "استثمارات دول الخليج",
     "geoHubs": "مراكز جيوسياسية",
-    "liveWebcams": "كاميرات مباشرة",
+    "liveYouTube": "كاميرات مباشرة",
+    "pinnedWebcams": "Pinned Webcams",
     "securityAdvisories": "تنبيهات أمنية",
     "orefSirens": "Israel Sirens",
     "telegramIntel": "استخبارات Telegram",
@@ -1425,7 +1426,9 @@
       "filterAlerts": "تنبيهات",
       "filterOsint": "OSINT",
       "filterPolitics": "سياسة",
-      "filterMiddleeast": "الشرق الأوسط"
+      "filterMiddleeast": "الشرق الأوسط",
+      "live": "مباشر",
+      "viewSource": "عرض المصدر"
     },
     "investments": {
       "infoTooltip": "قاعدة بيانات الاستثمارات الأجنبية المباشرة للمملكة العربية السعودية والإمارات في البنية التحتية الحيوية العالمية. انقر على صف للانتقال إلى موقع الاستثمار على الخريطة.",
@@ -2066,7 +2069,12 @@
       "usniIntel": "USNI Intel",
       "usniSource": "Source: USNI News Fleet Tracker",
       "approximatePosition": "Position approximate — based on USNI weekly report, not real-time AIS.",
-      "darkDescription": "⚠ السفينة أصبحت مظلمة - فُقدت إشارة AIS. قد يشير إلى عمليات حساسة."
+      "darkDescription": "⚠ السفينة أصبحت مظلمة - فُقدت إشارة AIS. قد يشير إلى عمليات حساسة.",
+      "recentTracking": "Recent Tracking",
+      "lastReport": "LATEST",
+      "nearChokepoint": "NEAR CHOKEPOINT",
+      "nearBase": "NEAR BASE",
+      "lastSeen": "LAST SEEN"
     },
     "militaryCluster": {
       "flightActivity": {

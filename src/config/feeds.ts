@@ -627,7 +627,7 @@ const FULL_FEEDS: Record<string, Feed[]> = {
     { name: 'Atlantic Council', url: railwayRss('https://www.atlanticcouncil.org/feed/') },
     { name: 'Foreign Affairs', url: rss('https://www.foreignaffairs.com/rss.xml') },
     { name: 'CSIS', url: rss('https://news.google.com/rss/search?q=site:csis.org+when:7d&hl=en-US&gl=US&ceid=US:en') },
-    { name: 'RAND', url: rss('https://news.google.com/rss/search?q=site:rand.org+when:7d&hl=en-US&gl=US&ceid=US:en') },
+    { name: 'RAND', url: rss('https://www.rand.org/pubs/articles.xml') },
     { name: 'Brookings', url: rss('https://news.google.com/rss/search?q=site:brookings.edu+when:7d&hl=en-US&gl=US&ceid=US:en') },
     { name: 'Carnegie', url: rss('https://news.google.com/rss/search?q=site:carnegieendowment.org+when:7d&hl=en-US&gl=US&ceid=US:en') },
     // New verified think tank feeds
@@ -1241,7 +1241,7 @@ export const INTEL_SOURCES: Feed[] = [
   { name: 'Middle East Institute', url: rss('https://news.google.com/rss/search?q=site:mei.edu+when:7d&hl=en-US&gl=US&ceid=US:en'), type: 'intl' },
 
   // Think Tanks & Research (Tier 3)
-  { name: 'RAND', url: rss('https://news.google.com/rss/search?q=site:rand.org+when:7d&hl=en-US&gl=US&ceid=US:en'), type: 'research' },
+  { name: 'RAND', url: rss('https://www.rand.org/pubs/articles.xml'), type: 'research' },
   { name: 'Brookings', url: rss('https://news.google.com/rss/search?q=site:brookings.edu&hl=en&gl=US&ceid=US:en'), type: 'research' },
   { name: 'Carnegie', url: rss('https://news.google.com/rss/search?q=site:carnegieendowment.org&hl=en&gl=US&ceid=US:en'), type: 'research' },
   { name: 'FAS', url: rss('https://news.google.com/rss/search?q=site:fas.org+nuclear+weapons+security&hl=en&gl=US&ceid=US:en'), type: 'research' },

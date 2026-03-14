@@ -39,12 +39,42 @@ interface TokenState {
   expiresAt: number;
 }
 
+interface AcledOAuthTokenResponse {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+}
+
 /**
  * In-memory fast-path cache.
  * Acts as L1 cache; Redis is L2 and survives Vercel Edge cold starts.
  */
 let memCached: TokenState | null = null;
 let refreshPromise: Promise<string | null> | null = null;
+
+async function requestAcledToken(
+  body: URLSearchParams,
+  action: 'exchange' | 'refresh',
+): Promise<AcledOAuthTokenResponse> {
+  const resp = await fetch(ACLED_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': CHROME_UA,
+    },
+    body,
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(
+      `ACLED OAuth token ${action} failed (${resp.status}): ${text.slice(0, 200)}`,
+    );
+  }
+
+  return (await resp.json()) as AcledOAuthTokenResponse;
+}
 
 /**
  * Exchange ACLED credentials for an OAuth token pair.
@@ -59,29 +89,7 @@ async function exchangeCredentials(
     grant_type: 'password',
     client_id: ACLED_CLIENT_ID,
   });
-
-  const resp = await fetch(ACLED_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': CHROME_UA,
-    },
-    body,
-    signal: AbortSignal.timeout(15_000),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(
-      `ACLED OAuth token exchange failed (${resp.status}): ${text.slice(0, 200)}`,
-    );
-  }
-
-  const data = (await resp.json()) as {
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-  };
+  const data = await requestAcledToken(body, 'exchange');
 
   if (!data.access_token || !data.refresh_token) {
     throw new Error('ACLED OAuth response missing access_token or refresh_token');
@@ -103,29 +111,7 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenState> {
     grant_type: 'refresh_token',
     client_id: ACLED_CLIENT_ID,
   });
-
-  const resp = await fetch(ACLED_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': CHROME_UA,
-    },
-    body,
-    signal: AbortSignal.timeout(15_000),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(
-      `ACLED OAuth token refresh failed (${resp.status}): ${text.slice(0, 200)}`,
-    );
-  }
-
-  const data = (await resp.json()) as {
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-  };
+  const data = await requestAcledToken(body, 'refresh');
 
   if (!data.access_token) {
     throw new Error('ACLED OAuth refresh response missing access_token');

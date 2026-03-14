@@ -24,6 +24,7 @@ export class StrategicPosturePanel extends Panel {
       showCount: false,
       trackActivity: true,
       infoTooltip: t('components.strategicPosture.infoTooltip'),
+      defaultRowSpan: 2,
     });
     this.init();
   }

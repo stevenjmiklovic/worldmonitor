@@ -1143,6 +1143,7 @@ async function dispatch(requestUrl, req, routes, context) {
       try { await fetch(url, { method: 'GET', signal: AbortSignal.timeout(PROBE_TIMEOUT) }); return true; } catch { return false; }
     }
     const providers = [];
+    const providerChecks = [];
     const ollamaUrl = process.env.OLLAMA_API_URL || process.env.LLM_API_URL;
     const groqKey = process.env.GROQ_API_KEY;
     const openrouterKey = process.env.OPENROUTER_API_KEY;
@@ -1150,14 +1151,23 @@ async function dispatch(requestUrl, req, routes, context) {
     if (ollamaUrl) {
       try {
         const origin = new URL(ollamaUrl).origin;
-        providers.push({ name: 'ollama', url: origin, available: await probeOrigin(origin) });
+        providerChecks.push(
+          probeOrigin(origin).then((available) => ({ name: 'ollama', url: origin, available })),
+        );
       } catch {}
     }
     if (groqKey && groqKey.startsWith('gsk_')) {
-      providers.push({ name: 'groq', url: 'https://api.groq.com', available: await probeOrigin('https://api.groq.com') });
+      providerChecks.push(
+        probeOrigin('https://api.groq.com').then((available) => ({ name: 'groq', url: 'https://api.groq.com', available })),
+      );
     }
     if (openrouterKey) {
-      providers.push({ name: 'openrouter', url: 'https://openrouter.ai', available: await probeOrigin('https://openrouter.ai') });
+      providerChecks.push(
+        probeOrigin('https://openrouter.ai').then((available) => ({ name: 'openrouter', url: 'https://openrouter.ai', available })),
+      );
+    }
+    if (providerChecks.length > 0) {
+      providers.push(...(await Promise.all(providerChecks)));
     }
 
     const anyAvailable = providers.some(p => p.available);

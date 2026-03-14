@@ -147,8 +147,8 @@ export const VARIANT_FEEDS: Record<string, Record<string, ServerFeed[]>> = {
     ],
     vcblogs: [
       { name: 'Y Combinator Blog', url: 'https://www.ycombinator.com/blog/rss/' },
-      { name: 'a16z Blog', url: 'https://a16z.com/feed/' },
-      { name: 'First Round Review', url: 'https://review.firstround.com/feed.xml' },
+      { name: 'a16z Blog', url: 'https://www.a16z.news/feed' },
+      { name: 'First Round Review', url: 'https://review.firstround.com/articles/rss' },
       { name: 'Sequoia Blog', url: 'https://www.sequoiacap.com/feed/' },
       { name: 'Stratechery', url: 'https://stratechery.com/feed/' },
     ],

@@ -12,13 +12,19 @@ import type {
   AisDisruption,
 } from '../../../../src/generated/server/worldmonitor/maritime/v1/service_server';
 
-import { cachedFetchJson } from '../../../_shared/redis';
+import { cachedFetchJson, getCachedJson } from '../../../_shared/redis';
 import { listNavigationalWarnings } from '../../maritime/v1/list-navigational-warnings';
 import { getVesselSnapshot } from '../../maritime/v1/get-vessel-snapshot';
+import type { PortWatchData } from './_portwatch-upstream';
+import type { CorridorRiskData } from './_corridorrisk-upstream';
+import { CANONICAL_CHOKEPOINTS } from './_chokepoint-ids';
 // @ts-expect-error — .mjs module, no declaration file
 import { computeDisruptionScore, scoreToStatus, SEVERITY_SCORE, THREAT_LEVEL } from './_scoring.mjs';
 
-const REDIS_CACHE_KEY = 'supply_chain:chokepoints:v2';
+const REDIS_CACHE_KEY = 'supply_chain:chokepoints:v4';
+const PORTWATCH_REDIS_KEY = 'supply_chain:portwatch:v1';
+const CORRIDORRISK_REDIS_KEY = 'supply_chain:corridorrisk:v1';
+const RELAY_TRANSIT_KEY = 'supply_chain:chokepoint_transits:v1';
 const REDIS_CACHE_TTL = 300; // 5 min
 const THREAT_CONFIG_MAX_AGE_DAYS = 120;
 const NEARBY_CHOKEPOINT_RADIUS_KM = 300;
@@ -56,6 +62,21 @@ interface ChokepointConfig {
   threatLevel: ThreatLevel;
   /** Short explanation of the threat classification, shown in description. */
   threatDescription: string;
+  directions: DirectionLabel[];
+}
+
+type DirectionLabel = 'eastbound' | 'westbound' | 'northbound' | 'southbound';
+
+interface RelayTransitEntry {
+  tanker: number;
+  cargo: number;
+  other: number;
+  total: number;
+}
+
+interface RelayTransitPayload {
+  transits: Record<string, RelayTransitEntry>;
+  fetchedAt: number;
 }
 
 /**
@@ -66,12 +87,19 @@ interface ChokepointConfig {
 export const THREAT_CONFIG_LAST_REVIEWED = '2026-03-04';
 
 export const CHOKEPOINTS: ChokepointConfig[] = [
-  { id: 'suez', name: 'Suez Canal', lat: 30.45, lon: 32.35, primaryKeywords: ['suez canal', 'suez'], areaKeywords: ['suez canal', 'suez', 'gulf of suez', 'red sea'], routes: ['China-Europe (Suez)', 'Gulf-Europe Oil', 'Qatar LNG-Europe'], threatLevel: 'high', threatDescription: 'JWC Listed Area — adjacent to active Red Sea conflict and Iran-Israel war spillover' },
-  { id: 'malacca', name: 'Strait of Malacca', lat: 1.43, lon: 103.5, primaryKeywords: ['strait of malacca', 'malacca'], areaKeywords: ['strait of malacca', 'malacca', 'singapore strait'], routes: ['China-Middle East Oil', 'China-Europe (via Suez)', 'Japan-Middle East Oil'], threatLevel: 'normal', threatDescription: '' },
-  { id: 'hormuz', name: 'Strait of Hormuz', lat: 26.56, lon: 56.25, primaryKeywords: ['strait of hormuz', 'hormuz'], areaKeywords: ['strait of hormuz', 'hormuz', 'persian gulf', 'arabian gulf', 'gulf of oman', 'iran naval', 'iran military'], routes: ['Gulf Oil Exports', 'Qatar LNG', 'Iran Exports'], threatLevel: 'war_zone', threatDescription: 'Active conflict — Iran-Israel war; Iranian naval blockade risk and mines reported in Persian Gulf' },
-  { id: 'bab_el_mandeb', name: 'Bab el-Mandeb', lat: 12.58, lon: 43.33, primaryKeywords: ['bab el-mandeb', 'bab al-mandab'], areaKeywords: ['bab el-mandeb', 'bab al-mandab', 'mandeb', 'aden', 'houthi', 'yemen', 'gulf of aden', 'red sea'], routes: ['Suez-Indian Ocean', 'Gulf-Europe Oil', 'Red Sea Transit'], threatLevel: 'critical', threatDescription: 'JWC Listed Area — active Houthi attacks on commercial shipping' },
-  { id: 'panama', name: 'Panama Canal', lat: 9.08, lon: -79.68, primaryKeywords: ['panama canal'], areaKeywords: ['panama canal', 'panama'], routes: ['US East Coast-Asia', 'US East Coast-South America', 'Atlantic-Pacific Bulk'], threatLevel: 'normal', threatDescription: '' },
-  { id: 'taiwan', name: 'Taiwan Strait', lat: 24.0, lon: 119.5, primaryKeywords: ['taiwan strait', 'formosa'], areaKeywords: ['taiwan strait', 'formosa', 'taiwan', 'south china sea'], routes: ['China-Japan Trade', 'Korea-Southeast Asia', 'Pacific Semiconductor'], threatLevel: 'elevated', threatDescription: 'Cross-strait military tensions and PLA exercises' },
+  { id: 'suez', name: 'Suez Canal', lat: 30.45, lon: 32.35, primaryKeywords: ['suez canal', 'suez'], areaKeywords: ['suez canal', 'suez', 'gulf of suez', 'red sea'], routes: ['China-Europe (Suez)', 'Gulf-Europe Oil', 'Qatar LNG-Europe'], threatLevel: 'high', threatDescription: 'JWC Listed Area — adjacent to active Red Sea conflict and Iran-Israel war spillover', directions: ['northbound', 'southbound'] },
+  { id: 'malacca_strait', name: 'Strait of Malacca', lat: 2.5, lon: 101.5, primaryKeywords: ['strait of malacca', 'malacca'], areaKeywords: ['strait of malacca', 'malacca', 'singapore strait'], routes: ['China-Middle East Oil', 'China-Europe (via Suez)', 'Japan-Middle East Oil'], threatLevel: 'normal', threatDescription: '', directions: ['northbound', 'southbound'] },
+  { id: 'hormuz_strait', name: 'Strait of Hormuz', lat: 26.56, lon: 56.25, primaryKeywords: ['strait of hormuz', 'hormuz'], areaKeywords: ['strait of hormuz', 'hormuz', 'persian gulf', 'arabian gulf', 'gulf of oman', 'iran naval', 'iran military'], routes: ['Gulf Oil Exports', 'Qatar LNG', 'Iran Exports'], threatLevel: 'war_zone', threatDescription: 'Active conflict — Iran-Israel war; Iranian naval blockade risk and mines reported in Persian Gulf', directions: ['eastbound', 'westbound'] },
+  { id: 'bab_el_mandeb', name: 'Bab el-Mandeb', lat: 12.58, lon: 43.33, primaryKeywords: ['bab el-mandeb', 'bab al-mandab'], areaKeywords: ['bab el-mandeb', 'bab al-mandab', 'mandeb', 'aden', 'houthi', 'yemen', 'gulf of aden', 'red sea'], routes: ['Suez-Indian Ocean', 'Gulf-Europe Oil', 'Red Sea Transit'], threatLevel: 'critical', threatDescription: 'JWC Listed Area — active Houthi attacks on commercial shipping', directions: ['northbound', 'southbound'] },
+  { id: 'panama', name: 'Panama Canal', lat: 9.08, lon: -79.68, primaryKeywords: ['panama canal'], areaKeywords: ['panama canal', 'panama'], routes: ['US East Coast-Asia', 'US East Coast-South America', 'Atlantic-Pacific Bulk'], threatLevel: 'normal', threatDescription: '', directions: ['northbound', 'southbound'] },
+  { id: 'taiwan_strait', name: 'Taiwan Strait', lat: 24.0, lon: 119.5, primaryKeywords: ['taiwan strait', 'formosa'], areaKeywords: ['taiwan strait', 'formosa', 'taiwan', 'south china sea'], routes: ['China-Japan Trade', 'Korea-Southeast Asia', 'Pacific Semiconductor'], threatLevel: 'elevated', threatDescription: 'Cross-strait military tensions and PLA exercises', directions: ['northbound', 'southbound'] },
+  { id: 'cape_of_good_hope', name: 'Cape of Good Hope', lat: -34.36, lon: 18.49, primaryKeywords: ['cape of good hope', 'good hope'], areaKeywords: ['cape of good hope', 'good hope', 'cape town', 'south africa', 'cape agulhas'], routes: ['Asia-Europe (Cape Route)', 'Gulf-Americas Oil', 'Suez Bypass'], threatLevel: 'normal', threatDescription: '', directions: ['eastbound', 'westbound'] },
+  { id: 'gibraltar', name: 'Strait of Gibraltar', lat: 35.96, lon: -5.35, primaryKeywords: ['strait of gibraltar', 'gibraltar'], areaKeywords: ['strait of gibraltar', 'gibraltar', 'mediterranean', 'algeciras', 'tangier'], routes: ['Atlantic-Mediterranean', 'Gulf-Europe Oil (final leg)', 'India-Europe'], threatLevel: 'normal', threatDescription: '', directions: ['eastbound', 'westbound'] },
+  { id: 'bosphorus', name: 'Bosporus Strait', lat: 41.12, lon: 29.05, primaryKeywords: ['bosphorus', 'bosporus', 'dardanelles', 'canakkale', 'turkish straits'], areaKeywords: ['bosphorus', 'bosporus', 'dardanelles', 'canakkale', 'istanbul', 'marmara', 'black sea', 'turkish straits', 'gallipoli', 'aegean'], routes: ['Russia Black Sea Exports', 'Ukraine Grain', 'Caspian Oil Transit', 'Aegean-Marmara Transit'], threatLevel: 'elevated', threatDescription: 'Montreux Convention restrictions; elevated due to Russia-Ukraine war and periodic Turkish traffic controls', directions: ['northbound', 'southbound'] },
+  { id: 'korea_strait', name: 'Korea Strait', lat: 34.0, lon: 129.0, primaryKeywords: ['korea strait', 'tsushima strait'], areaKeywords: ['korea strait', 'tsushima', 'busan', 'shimonoseki', 'sea of japan', 'east sea'], routes: ['Japan-Korea Trade', 'China-Japan (alternate)', 'Pacific-East Asia'], threatLevel: 'normal', threatDescription: '', directions: ['northbound', 'southbound'] },
+  { id: 'dover_strait', name: 'Dover Strait', lat: 51.05, lon: 1.45, primaryKeywords: ['dover strait', 'strait of dover', 'english channel'], areaKeywords: ['dover', 'calais', 'english channel', 'north sea', 'pas-de-calais'], routes: ['North Sea-Atlantic', 'Europe Intra-Trade', 'UK-Continental Europe'], threatLevel: 'normal', threatDescription: '', directions: ['northbound', 'southbound'] },
+  { id: 'kerch_strait', name: 'Kerch Strait', lat: 45.33, lon: 36.60, primaryKeywords: ['kerch strait', 'kerch bridge'], areaKeywords: ['kerch', 'crimea', 'azov', 'sea of azov', 'black sea'], routes: ['Ukraine Grain (Azov)', 'Russia Azov Ports', 'Crimea Supply'], threatLevel: 'war_zone', threatDescription: 'Active conflict zone; Russia controls Kerch Bridge; Ukraine grain exports via Azov severely restricted', directions: ['northbound', 'southbound'] },
+  { id: 'lombok_strait', name: 'Lombok Strait', lat: -8.47, lon: 115.72, primaryKeywords: ['lombok strait'], areaKeywords: ['lombok', 'bali', 'indonesia', 'nusa tenggara'], routes: ['Malacca Bypass (VLCCs)', 'Australia-Asia', 'Indian Ocean-Pacific'], threatLevel: 'normal', threatDescription: '', directions: ['northbound', 'southbound'] },
 ];
 
 function normalizeText(input: string): string {
@@ -203,15 +231,50 @@ interface ChokepointFetchResult {
   upstreamUnavailable: boolean;
 }
 
+function buildRelayLookup(transitData: RelayTransitPayload | null): Map<string, RelayTransitEntry> {
+  const map = new Map<string, RelayTransitEntry>();
+  if (!transitData?.transits) return map;
+  for (const [relayName, entry] of Object.entries(transitData.transits)) {
+    const canonical = CANONICAL_CHOKEPOINTS.find(c => c.relayName === relayName);
+    if (canonical) map.set(canonical.id, entry);
+  }
+  return map;
+}
+
+function buildTransitSummary(
+  cp: ChokepointConfig,
+  portwatch: PortWatchData | null,
+  relayLookup: Map<string, RelayTransitEntry>,
+  corridorRisk: CorridorRiskData | null,
+): import('../../../../src/generated/server/worldmonitor/supply_chain/v1/service_server').TransitSummary {
+  const relay = relayLookup.get(cp.id);
+  const pw = portwatch?.[cp.id];
+  const cr = corridorRisk?.[cp.id];
+  return {
+    todayTotal: relay?.total ?? 0,
+    todayTanker: relay?.tanker ?? 0,
+    todayCargo: relay?.cargo ?? 0,
+    todayOther: relay?.other ?? 0,
+    wowChangePct: pw?.wowChangePct ?? 0,
+    history: pw?.history ?? [],
+    riskLevel: cr?.riskLevel ?? '',
+    incidentCount7d: cr?.incidentCount7d ?? 0,
+    disruptionPct: cr?.disruptionPct ?? 0,
+  };
+}
+
 async function fetchChokepointData(): Promise<ChokepointFetchResult> {
   const ctx = makeInternalCtx();
 
   let navFailed = false;
   let vesselFailed = false;
 
-  const [navResult, vesselResult] = await Promise.all([
+  const [navResult, vesselResult, portwatchData, corridorRiskData, transitData] = await Promise.all([
     listNavigationalWarnings(ctx, { area: '', pageSize: 0, cursor: '' }).catch((): ListNavigationalWarningsResponse => { navFailed = true; return { warnings: [], pagination: undefined }; }),
     getVesselSnapshot(ctx, { neLat: 90, neLon: 180, swLat: -90, swLon: -180 }).catch((): GetVesselSnapshotResponse => { vesselFailed = true; return { snapshot: undefined }; }),
+    getCachedJson(PORTWATCH_REDIS_KEY, true).catch(() => null) as Promise<PortWatchData | null>,
+    getCachedJson(CORRIDORRISK_REDIS_KEY, true).catch(() => null) as Promise<CorridorRiskData | null>,
+    getCachedJson(RELAY_TRANSIT_KEY, true).catch(() => null) as Promise<RelayTransitPayload | null>,
   ]);
 
   const warnings = navResult.warnings || [];
@@ -220,6 +283,7 @@ async function fetchChokepointData(): Promise<ChokepointFetchResult> {
   const warningsByChokepoint = groupWarningsByChokepoint(warnings);
   const disruptionsByChokepoint = groupDisruptionsByChokepoint(disruptions);
   const threatConfigFresh = isThreatConfigFresh();
+  const relayLookup = buildRelayLookup(transitData);
 
   const chokepoints = CHOKEPOINTS.map((cp): ChokepointInfo => {
     const matchedWarnings = warningsByChokepoint.get(cp.id) ?? [];
@@ -262,6 +326,9 @@ async function fetchChokepointData(): Promise<ChokepointFetchResult> {
       congestionLevel,
       affectedRoutes: cp.routes,
       description: descriptions.join('; '),
+      directions: cp.directions,
+      directionalDwt: [],
+      transitSummary: buildTransitSummary(cp, portwatchData, relayLookup, corridorRiskData),
     };
   });
 

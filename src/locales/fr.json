@@ -270,7 +270,8 @@
     "techHubs": "Pôles Technologiques",
     "gccInvestments": "Investissements du CCG",
     "geoHubs": "Centres géopolitiques",
-    "liveWebcams": "Webcams en Direct",
+    "liveYouTube": "Webcams en Direct",
+    "pinnedWebcams": "Pinned Webcams",
     "securityAdvisories": "Avis de Sécurité",
     "orefSirens": "Israel Sirens",
     "telegramIntel": "Renseignement Telegram",
@@ -1469,7 +1470,9 @@
       "filterAlerts": "Alertes",
       "filterOsint": "OSINT",
       "filterPolitics": "Politique",
-      "filterMiddleeast": "Moyen-Orient"
+      "filterMiddleeast": "Moyen-Orient",
+      "live": "EN DIRECT",
+      "viewSource": "Voir la source"
     },
     "investments": {
       "infoTooltip": "Base de données des investissements directs étrangers de l'Arabie saoudite et des Émirats arabes unis dans les infrastructures critiques mondiales. Cliquez sur une ligne pour accéder à l'investissement sur la carte.",
@@ -2066,7 +2069,12 @@
       "usniIntel": "USNI Intel",
       "usniSource": "Source: USNI News Fleet Tracker",
       "approximatePosition": "Position approximate — based on USNI weekly report, not real-time AIS.",
-      "darkDescription": "⚠ Le navire est devenu sombre - signal AIS perdu. Peut indiquer des opérations sensibles."
+      "darkDescription": "⚠ Le navire est devenu sombre - signal AIS perdu. Peut indiquer des opérations sensibles.",
+      "recentTracking": "Recent Tracking",
+      "lastReport": "LATEST",
+      "nearChokepoint": "NEAR CHOKEPOINT",
+      "nearBase": "NEAR BASE",
+      "lastSeen": "LAST SEEN"
     },
     "militaryCluster": {
       "flightActivity": {
