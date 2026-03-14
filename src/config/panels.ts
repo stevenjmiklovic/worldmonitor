@@ -863,6 +863,7 @@ const GAME_MAP_LAYERS: MapLayers = {
   iranAttacks: false,
   ciiChoropleth: true,
   dayNight: true,
+  webcams: false,
   // Commodity layers (disabled in game variant)
   miningSites: false,
   processingPlants: false,
@@ -921,6 +922,7 @@ const GAME_MOBILE_MAP_LAYERS: MapLayers = {
   iranAttacks: false,
   ciiChoropleth: false,
   dayNight: false,
+  webcams: false,
   // Commodity layers (disabled)
   miningSites: false,
   processingPlants: false,
