@@ -27,7 +27,6 @@ import {
   LAYER_TO_SOURCE,
   FEEDS,
   INTEL_SOURCES,
-  DEFAULT_PANELS,
 } from '@/config';
 import { VARIANT_META } from '@/config/variant-meta';
 import {
@@ -51,7 +50,6 @@ import { dataFreshness } from '@/services/data-freshness';
 import { mlWorker } from '@/services/ml-worker';
 import { UnifiedSettings } from '@/components/UnifiedSettings';
 import { t } from '@/services/i18n';
-import { TvModeController } from '@/services/tv-mode';
 
 export interface EventHandlerCallbacks {
   updateSearchIndex: () => void;
@@ -87,6 +85,8 @@ export class EventHandlerManager implements AppModule {
   private boundMapFullscreenEscHandler: ((e: KeyboardEvent) => void) | null = null;
   private boundMobileMenuKeyHandler: ((e: KeyboardEvent) => void) | null = null;
   private boundPanelCloseHandler: ((e: Event) => void) | null = null;
+  private boundUndoHandler: ((e: KeyboardEvent) => void) | null = null;
+  private closedPanelStack: string[] = []; // max-items: 20
   private idleTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private snapshotIntervalId: ReturnType<typeof setInterval> | null = null;
   private clockIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -106,50 +106,26 @@ export class EventHandlerManager implements AppModule {
   init(): void {
     this.setupEventListeners();
     this.setupIdleDetection();
-    this.setupTvMode();
   }
 
-  private setupTvMode(): void {
-    if (SITE_VARIANT !== 'happy') return;
+  private performUndo(): void {
+    const panelId = this.closedPanelStack.pop();
+    if (!panelId) return;
+    const config = this.ctx.panelSettings[panelId];
+    if (!config) return;
+    config.enabled = true;
+    trackPanelToggled(panelId, true);
+    saveToStorage(STORAGE_KEYS.panels, this.ctx.panelSettings);
+    this.applyPanelSettings();
+    this.ctx.unifiedSettings?.refreshPanelToggles();
 
-    const tvBtn = document.getElementById('tvModeBtn');
-    const tvExitBtn = document.getElementById('tvExitBtn');
-    if (tvBtn) {
-      tvBtn.addEventListener('click', () => this.toggleTvMode());
+    // Ensure restored panel fetches fresh data (otherwise it may show no content)
+    const panel = this.ctx.panels[panelId];
+    if (panel && 'fetchData' in panel) {
+      (panel as any).fetchData();
     }
-    if (tvExitBtn) {
-      tvExitBtn.addEventListener('click', () => this.toggleTvMode());
-    }
-    // Keyboard shortcut: Shift+T
-    this.boundTvKeydownHandler = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.key === 'T' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const active = document.activeElement;
-        if (active?.tagName !== 'INPUT' && active?.tagName !== 'TEXTAREA') {
-          e.preventDefault();
-          this.toggleTvMode();
-        }
-      }
-    };
-    document.addEventListener('keydown', this.boundTvKeydownHandler);
   }
 
-  private toggleTvMode(): void {
-    const panelKeys = Object.keys(DEFAULT_PANELS).filter(
-      key => this.ctx.panelSettings[key]?.enabled !== false
-    );
-    if (!this.ctx.tvMode) {
-      this.ctx.tvMode = new TvModeController({
-        panelKeys,
-        onPanelChange: () => {
-          document.getElementById('tvModeBtn')?.classList.toggle('active', this.ctx.tvMode?.active ?? false);
-        }
-      });
-    } else {
-      this.ctx.tvMode.updatePanelKeys(panelKeys);
-    }
-    this.ctx.tvMode.toggle();
-    document.getElementById('tvModeBtn')?.classList.toggle('active', this.ctx.tvMode.active);
-  }
 
   destroy(): void {
     this.debouncedUrlSync.cancel();
@@ -236,6 +212,10 @@ export class EventHandlerManager implements AppModule {
       this.ctx.container.removeEventListener('wm:panel-close', this.boundPanelCloseHandler);
       this.boundPanelCloseHandler = null;
     }
+    if (this.boundUndoHandler) {
+      document.removeEventListener('keydown', this.boundUndoHandler);
+      this.boundUndoHandler = null;
+    }
     this.ctx.tvMode?.destroy();
     this.ctx.tvMode = null;
     this.ctx.unifiedSettings?.destroy();
@@ -293,8 +273,22 @@ export class EventHandlerManager implements AppModule {
       saveToStorage(STORAGE_KEYS.panels, this.ctx.panelSettings);
       this.applyPanelSettings();
       this.ctx.unifiedSettings?.refreshPanelToggles();
+      // push to undo stack (cap size for memory safety)
+      this.closedPanelStack.push(panelId);
+      if (this.closedPanelStack.length > 20) this.closedPanelStack.shift();
     }) as EventListener;
     this.ctx.container.addEventListener('wm:panel-close', this.boundPanelCloseHandler);
+
+    // undo via Ctrl/Cmd+Z
+    this.boundUndoHandler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+        e.preventDefault();
+        this.performUndo();
+      }
+    };
+    document.addEventListener('keydown', this.boundUndoHandler);
 
     const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     this.ctx.container.querySelectorAll<HTMLAnchorElement>('.variant-option').forEach(link => {

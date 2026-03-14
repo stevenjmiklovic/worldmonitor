@@ -8,7 +8,8 @@ on:
 
 jobs:
   markdown:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # No secrets needed — run for all PRs including forks
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
