@@ -1,5 +1,8 @@
 import { mlWorker } from './ml-worker';
 import type { NewsItem } from '@/types';
+import { logger } from '@/lib/logger';
+
+const sentimentGateLogger = logger.child({ module: 'SentimentGate' });
 
 const DEFAULT_THRESHOLD = 0.85;
 const BATCH_SIZE = 20; // ML_THRESHOLDS.maxTextsPerBatch from ml-config.ts
@@ -57,7 +60,7 @@ export async function filterBySentiment(
 
     return passed;
   } catch (err) {
-    console.warn('[SentimentGate] Sentiment classification failed, passing all items through:', err);
+    sentimentGateLogger.warn('Sentiment classification failed, passing all items through', err instanceof Error ? err : undefined);
     return items;
   }
 }

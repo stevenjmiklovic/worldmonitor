@@ -8,6 +8,9 @@ import type {
 } from './types';
 import { haversineKm } from '@/utils/distance';
 import { IntelligenceServiceClient } from '@/generated/client/worldmonitor/intelligence/v1/service_client';
+import { logger } from '@/lib/logger';
+
+const ceLogger = logger.child({ module: 'CorrelationEngine' });
 
 const LLM_SCORE_THRESHOLD = 60;
 const LLM_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -69,7 +72,7 @@ export class CorrelationEngine {
 
       const elapsed = performance.now() - t0;
       if (elapsed > 100) {
-        console.warn(`[CorrelationEngine] run() took ${elapsed.toFixed(0)}ms (>100ms target)`);
+        ceLogger.warn('run() exceeded target duration', { elapsedMs: Math.round(elapsed), targetMs: 100 });
       }
 
       document.dispatchEvent(new CustomEvent('wm:correlation-updated', {
@@ -425,7 +428,7 @@ export class CorrelationEngine {
         }));
       }
     } catch (err) {
-      console.warn(`[CorrelationEngine] LLM assessment failed for ${card.domain}:`, err);
+      ceLogger.warn('LLM assessment failed', err instanceof Error ? err : undefined, { domain: card.domain });
     }
   }
 
