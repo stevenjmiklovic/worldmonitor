@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type (ignored if custom_version is set)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      custom_version:
+        description: 'Custom version (e.g. 2.7.0). Overrides version_bump if set.'
+        required: false
+        type: string
+      variant:
+        description: 'App variant to release'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - tech
+      draft:
+        description: 'Create desktop release as draft'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version
+        id: bump
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.custom_version }}" ]; then
+            CUSTOM="${{ inputs.custom_version }}"
+            CUSTOM="${CUSTOM#v}"
+            if ! echo "$CUSTOM" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$'; then
+              echo "::error::Invalid version: '$CUSTOM'. Must be a valid semver string (e.g. 2.7.0)."
+              exit 1
+            fi
+            npm version "$CUSTOM" --no-git-tag-version
+          else
+            npm version "${{ inputs.version_bump }}" --no-git-tag-version
+          fi
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Bumped to version: $NEW_VERSION"
+
+      - name: Sync version to desktop config files
+        run: npm run version:sync
+
+      - name: Commit version bump and create tag
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "chore: release v${{ steps.bump.outputs.version }}"
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin HEAD --follow-tags
+
+      - name: Trigger desktop build
+        shell: bash
+        run: |
+          gh workflow run build-desktop.yml \
+            --ref "v${{ steps.bump.outputs.version }}" \
+            --field variant="${{ inputs.variant }}" \
+            --field draft="${{ inputs.draft }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
