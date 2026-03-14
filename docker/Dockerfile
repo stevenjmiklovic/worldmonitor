@@ -8,7 +8,10 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Install all dependencies (including devDependencies for tsc, vite, etc.).
+# blog-site/package.json and package-lock.json must be present before npm ci
+# because the postinstall script runs `cd blog-site && npm ci --prefer-offline`.
 COPY package.json package-lock.json ./
+COPY blog-site/package.json blog-site/package-lock.json ./blog-site/
 RUN npm ci --include=dev
 
 # Copy source and build.
