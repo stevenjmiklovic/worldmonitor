@@ -16,6 +16,7 @@ import { validateApiKey } from '../api/_api-key.js';
 import { mapErrorToResponse } from './error-mapper';
 import { checkRateLimit, checkEndpointRateLimit, hasEndpointRatePolicy } from './_shared/rate-limit';
 import { drainResponseHeaders } from './_shared/response-headers';
+import { logger, setRequestLogger } from '../src/lib/logger';
 import type { ServerOptions } from '../src/generated/server/worldmonitor/seismology/v1/service_server';
 
 export const serverOptions: ServerOptions = { onError: mapErrorToResponse };
@@ -153,6 +154,19 @@ export function createDomainGateway(
     const rawPathname = new URL(request.url).pathname;
     const pathname = rawPathname.length > 1 ? rawPathname.replace(/\/+$/, '') : rawPathname;
 
+    // Correlation ID: reuse from header or generate a new one (Req 5.1, 5.4)
+    const correlationId = request.headers.get('X-Correlation-ID') ?? crypto.randomUUID();
+
+    // Request-scoped child logger (Req 5.1, 5.2)
+    const reqLogger = logger.child({ correlationId, module: 'gateway' });
+    setRequestLogger(request, reqLogger);
+
+    // Capture start time for duration measurement (Req 6.2)
+    const startTime = performance.now();
+
+    // Log request start (Req 6.1)
+    reqLogger.info('Request started', { method: request.method, path: pathname, correlationId });
+
     // Origin check — skip CORS headers for disallowed origins
     if (isDisallowedOrigin(request)) {
       return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
@@ -232,7 +246,7 @@ export function createDomainGateway(
     try {
       response = await matchedHandler(request);
     } catch (err) {
-      console.error('[gateway] Unhandled handler error:', err);
+      reqLogger.error('Unhandled handler error', err instanceof Error ? err : new Error(String(err)), { method: request.method, path: pathname });
       response = new Response(JSON.stringify({ message: 'Internal server error' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
@@ -250,6 +264,9 @@ export function createDomainGateway(
         mergedHeaders.set(key, value);
       }
     }
+
+    // Propagate correlation ID on the response (Req 5.3)
+    mergedHeaders.set('X-Correlation-ID', correlationId);
 
     if (response.status === 200 && request.method === 'GET') {
       if (mergedHeaders.get('X-No-Cache')) {
@@ -269,6 +286,9 @@ export function createDomainGateway(
     if (!new URL(request.url).searchParams.has('_debug')) {
       mergedHeaders.delete('X-Cache-Tier');
     }
+
+    // Log response completion (Req 6.2)
+    reqLogger.info('Request completed', { method: request.method, path: pathname, status: response.status, durationMs: Math.round(performance.now() - startTime) });
 
     // ETag / 304 Not Modified — avoid resending unchanged data
     if (response.status === 200 && request.method === 'GET' && response.body) {

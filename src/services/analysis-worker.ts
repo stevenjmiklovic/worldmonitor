@@ -7,6 +7,9 @@ import type { NewsItem, ClusteredEvent, MarketData } from '@/types';
 import type { PredictionMarket } from '@/services/prediction';
 import type { CorrelationSignal } from './correlation';
 import { SOURCE_TIERS, SOURCE_TYPES, type SourceType } from '@/config/feeds';
+import { logger } from '@/lib/logger';
+
+const analysisWorkerLogger = logger.child({ module: 'AnalysisWorker' });
 
 // Import worker using Vite's worker syntax
 import AnalysisWorker from '@/workers/analysis.worker?worker';
@@ -58,7 +61,7 @@ class AnalysisWorkerManager {
     this.readyTimeout = setTimeout(() => {
       if (!this.isReady) {
         const error = new Error('Worker failed to become ready within timeout');
-        console.error('[AnalysisWorker]', error.message);
+        analysisWorkerLogger.error('Worker failed to become ready within timeout');
         this.readyReject?.(error);
         this.cleanup();
       }
@@ -67,7 +70,7 @@ class AnalysisWorkerManager {
     try {
       this.worker = new AnalysisWorker();
     } catch (error) {
-      console.error('[AnalysisWorker] Failed to create worker:', error);
+      analysisWorkerLogger.error('Failed to create worker', error instanceof Error ? error : undefined);
       this.readyReject?.(error instanceof Error ? error : new Error(String(error)));
       this.cleanup();
       return;
@@ -117,7 +120,7 @@ class AnalysisWorkerManager {
     };
 
     this.worker.onerror = (error) => {
-      console.error('[AnalysisWorker] Error:', error);
+      analysisWorkerLogger.error('Error', error instanceof Error ? error : undefined);
 
       // If not ready yet, reject the ready promise
       if (!this.isReady) {

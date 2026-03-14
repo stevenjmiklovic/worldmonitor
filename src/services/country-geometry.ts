@@ -1,4 +1,7 @@
 import type { FeatureCollection, Geometry, GeoJsonProperties, Position } from 'geojson';
+import { logger } from '@/lib/logger';
+
+const countryGeometryLogger = logger.child({ module: 'country-geometry' });
 
 interface IndexedCountryGeometry {
   code: string;
@@ -280,7 +283,7 @@ async function ensureLoaded(): Promise<void> {
         // Overrides optional; ignore fetch/parse errors
       }
     } catch (err) {
-      console.warn('[country-geometry] Failed to load countries.geojson:', err);
+      countryGeometryLogger.warn('Failed to load countries.geojson', err instanceof Error ? err : undefined);
     }
   })();
 
