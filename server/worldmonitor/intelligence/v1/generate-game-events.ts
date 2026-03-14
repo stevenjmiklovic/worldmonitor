@@ -1,11 +1,33 @@
 import type {
   ServerContext,
-  GenerateGameEventsRequest,
-  GenerateGameEventsResponse,
-  GeneratedGameEvent,
 } from '../../../../src/generated/server/worldmonitor/intelligence/v1/service_server';
 
 import { callLlm } from '../../../_shared/llm';
+
+// Types defined locally — GenerateGameEvents RPC is not yet registered in
+// the IntelligenceService proto service definition, so these aren't generated.
+interface GenerateGameEventsRequest {
+  headlines?: string[];
+  count?: number;
+  turn?: number;
+}
+
+interface GeneratedGameEvent {
+  headline: string;
+  description: string;
+  region: string;
+  stabilityDelta: number;
+  influenceDelta: number;
+  threatDelta: number;
+  approvalDelta: number;
+  defconDelta: number;
+}
+
+interface GenerateGameEventsResponse {
+  events: GeneratedGameEvent[];
+  provider: string;
+  fallback: boolean;
+}
 
 const VALID_REGIONS = new Set([
   'northAmerica', 'europe', 'eastAsia', 'southAsia',
