@@ -108,7 +108,7 @@ describe('Generated types include aisDisruptions', () => {
   });
 
   it('client ChokepointInfo has transitSummary field', () => {
-    assert.match(clientSrc, /transitSummary:\s*TransitSummary/);
+    assert.match(clientSrc, /transitSummary\??:\s*TransitSummary/);
   });
 
   it('server has TransitSummary interface', () => {
@@ -120,7 +120,7 @@ describe('Generated types include aisDisruptions', () => {
   });
 
   it('server ChokepointInfo has transitSummary field', () => {
-    assert.match(serverSrc, /transitSummary:\s*TransitSummary/);
+    assert.match(serverSrc, /transitSummary\??:\s*TransitSummary/);
   });
 });
 
@@ -688,7 +688,7 @@ describe('Chokepoint threat level config', () => {
 
   it('THREAT_CONFIG_LAST_REVIEWED is a valid ISO date string', () => {
     assert.ok(THREAT_CONFIG_LAST_REVIEWED, 'THREAT_CONFIG_LAST_REVIEWED should be exported');
-    assert.ok(!isNaN(Date.parse(THREAT_CONFIG_LAST_REVIEWED)),
+    assert.ok(!Number.isNaN(Date.parse(THREAT_CONFIG_LAST_REVIEWED)),
       'THREAT_CONFIG_LAST_REVIEWED should be a valid date');
   });
 });

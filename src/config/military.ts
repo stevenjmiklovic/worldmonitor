@@ -671,7 +671,7 @@ export function isKnownMilitaryHex(hexCode: string): { operator: MilitaryOperato
  */
 export function getNearbyHotspot(lat: number, lon: number): typeof MILITARY_HOTSPOTS[number] | undefined {
   for (const hotspot of MILITARY_HOTSPOTS) {
-    const distance = Math.sqrt(Math.pow(lat - hotspot.lat, 2) + Math.pow(lon - hotspot.lon, 2));
+    const distance = Math.sqrt((lat - hotspot.lat) ** 2 + (lon - hotspot.lon) ** 2);
     if (distance <= hotspot.radius) {
       return hotspot;
     }

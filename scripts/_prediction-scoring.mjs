@@ -38,7 +38,7 @@ export function parseYesPrice(market) {
     const prices = JSON.parse(market.outcomePrices || '[]');
     if (prices.length >= 1) {
       const p = parseFloat(prices[0]);
-      if (!isNaN(p) && p >= 0 && p <= 1) return +(p * 100).toFixed(1);
+      if (!Number.isNaN(p) && p >= 0 && p <= 1) return +(p * 100).toFixed(1);
     }
   } catch {}
   return null;

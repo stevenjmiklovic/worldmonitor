@@ -132,13 +132,22 @@ export class SupplyChainPanel extends Panel {
         const statusDot = cp.status === 'red' ? 'sc-dot-red' : cp.status === 'yellow' ? 'sc-dot-yellow' : 'sc-dot-green';
         const aisDisruptions = cp.aisDisruptions ?? (cp.congestionLevel === 'normal' ? 0 : 1);
         const ts = cp.transitSummary;
-        const transitRow = ts && ts.todayTotal > 0
-          ? `<div class="trade-sector">${t('components.supplyChain.transit24h')}: ${ts.todayTotal} vessels (${ts.todayTanker} ${t('components.supplyChain.tankers')}, ${ts.todayCargo} ${t('components.supplyChain.cargo')}, ${ts.todayOther} other) | ${t('components.supplyChain.wowChange')}: <span class="trade-flow-change ${ts.wowChangePct >= 0 ? 'change-positive' : 'change-negative'}">${ts.wowChangePct >= 0 ? '\u25B2' : '\u25BC'}${Math.abs(ts.wowChangePct).toFixed(1)}%</span></div>`
-          : '';
+        const hasRealtimeCounts = ts && ts.todayTotal > 0;
+        const hasWow = ts && ts.wowChangePct !== 0;
+        const wowPct = ts?.wowChangePct ?? 0;
+        const wowSpan = hasWow ? `<span class="trade-flow-change ${wowPct >= 0 ? 'change-positive' : 'change-negative'}">${wowPct >= 0 ? '\u25B2' : '\u25BC'}${Math.abs(wowPct).toFixed(1)}%</span>` : '';
+        const transitRow = hasRealtimeCounts
+          ? `<div class="trade-sector">${t('components.supplyChain.transit24h')}: ${ts.todayTotal} vessels (${ts.todayTanker} ${t('components.supplyChain.tankers')}, ${ts.todayCargo} ${t('components.supplyChain.cargo')}, ${ts.todayOther} other)${hasWow ? ` | ${t('components.supplyChain.wowChange')}: ${wowSpan}` : ''}</div>`
+          : hasWow
+            ? `<div class="trade-sector">${t('components.supplyChain.wowChange')}: ${wowSpan}</div>`
+            : '';
         const riskRow = ts?.riskLevel
-          ? `<div class="trade-sector">${t('components.supplyChain.riskLevel')}: ${escapeHtml(ts.riskLevel)} | ${ts.incidentCount7d} incidents (7d)</div>`
+          ? `<div class="trade-sector">${t('components.supplyChain.riskLevel')}: ${escapeHtml(ts.riskLevel)} | ${ts.incidentCount7d} incidents (7d)${ts.riskSummary ? ` | ${escapeHtml(ts.riskSummary)}` : ''}</div>`
           : '';
         const expanded = this.expandedChokepoint === cp.name;
+        const actionRow = expanded && ts?.riskReportAction
+          ? `<div class="trade-sector"><strong>${t('components.supplyChain.routingAction')}:</strong> ${escapeHtml(ts.riskReportAction)}</div>`
+          : '';
         const chartPlaceholder = expanded && ts?.history?.length
           ? `<div data-chart-cp="${escapeHtml(cp.name)}" style="margin-top:8px;min-height:120px"></div>`
           : '';
@@ -150,11 +159,14 @@ export class SupplyChainPanel extends Panel {
             <span class="trade-status ${statusClass}">${escapeHtml(cp.status)}</span>
           </div>
           <div class="trade-restriction-body">
-            <div class="trade-sector">${cp.activeWarnings} ${t('components.supplyChain.warnings')} · ${aisDisruptions} ${t('components.supplyChain.aisDisruptions')}${cp.directions?.length ? ` · ${escapeHtml(cp.directions.join('/'))}` : ''}</div>
+            ${cp.activeWarnings > 0 || aisDisruptions > 0
+              ? `<div class="trade-sector">${cp.activeWarnings} ${t('components.supplyChain.warnings')} · ${aisDisruptions} ${t('components.supplyChain.aisDisruptions')}${cp.directions?.length ? ` · ${escapeHtml(cp.directions.join('/'))}` : ''}</div>`
+              : cp.directions?.length ? `<div class="trade-sector">${escapeHtml(cp.directions.join('/'))}</div>` : ''}
             ${transitRow}
             ${riskRow}
             <div class="trade-description">${escapeHtml(cp.description)}</div>
             <div class="trade-affected">${escapeHtml(cp.affectedRoutes.join(', '))}</div>
+            ${actionRow}
             ${chartPlaceholder}
           </div>
         </div>`;

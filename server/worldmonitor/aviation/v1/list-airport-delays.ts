@@ -122,7 +122,7 @@ export async function listAirportDelays(
   }
 
   // 3. NOTAM alerts — shared loader (seed-first with live fallback)
-  let allAlerts = [...faaAlerts, ...intlAlerts];
+  const allAlerts = [...faaAlerts, ...intlAlerts];
   const notamResult = await loadNotamClosures();
   if (notamResult) {
     const existingIatas = new Set(allAlerts.map(a => a.iata));

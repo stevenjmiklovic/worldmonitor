@@ -14,11 +14,8 @@ const breaker = createCircuitBreaker<USNIFleetReport | null>({
   maxFailures: 3,
   cooldownMs: 10 * 60 * 1000,
   cacheTtlMs: 60 * 60 * 1000, // 1hr local cache
+  persistCache: true,
 });
-
-let lastReport: USNIFleetReport | null = null;
-let lastFetchTime = 0;
-const LOCAL_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 function mapProtoToReport(resp: GetUSNIFleetReportResponse): USNIFleetReport | null {
   const r = resp.report;
@@ -53,22 +50,11 @@ function mapProtoToReport(resp: GetUSNIFleetReportResponse): USNIFleetReport | n
 }
 
 export async function fetchUSNIFleetReport(): Promise<USNIFleetReport | null> {
-  if (lastReport && Date.now() - lastFetchTime < LOCAL_CACHE_TTL) {
-    return lastReport;
-  }
-
-  const report = await breaker.execute(async () => {
+  return breaker.execute(async () => {
     const resp = await client.getUSNIFleetReport({ forceRefresh: false });
     if (resp.error && !resp.report) return null;
     return mapProtoToReport(resp);
-  }, null);
-
-  if (report) {
-    lastReport = report;
-    lastFetchTime = Date.now();
-  }
-
-  return report;
+  }, null, { shouldCache: (result) => result !== null });
 }
 
 function normalizeHull(hull: string | undefined): string {

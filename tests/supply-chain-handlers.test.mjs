@@ -45,9 +45,9 @@ describe('Chokepoint scoring', () => {
   });
 
   it('has correct severity enum keys', () => {
-    assert.equal(SEVERITY_SCORE['AIS_DISRUPTION_SEVERITY_LOW'], 1);
-    assert.equal(SEVERITY_SCORE['AIS_DISRUPTION_SEVERITY_ELEVATED'], 2);
-    assert.equal(SEVERITY_SCORE['AIS_DISRUPTION_SEVERITY_HIGH'], 3);
+    assert.equal(SEVERITY_SCORE.AIS_DISRUPTION_SEVERITY_LOW, 1);
+    assert.equal(SEVERITY_SCORE.AIS_DISRUPTION_SEVERITY_ELEVATED, 2);
+    assert.equal(SEVERITY_SCORE.AIS_DISRUPTION_SEVERITY_HIGH, 3);
   });
 });
 

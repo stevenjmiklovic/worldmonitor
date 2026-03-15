@@ -40,7 +40,7 @@ function parseRows(data: any, indicator: string): RawFlowRow[] {
   for (const row of dataset) {
     const year = parseInt(row.Year ?? row.year ?? row.Period ?? '', 10);
     const value = parseFloat(row.Value ?? row.value ?? '');
-    if (!isNaN(year) && !isNaN(value)) {
+    if (!Number.isNaN(year) && !Number.isNaN(value)) {
       rows.push({ year, indicator, value });
     }
   }

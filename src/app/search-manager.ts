@@ -557,7 +557,7 @@ export class SearchManager implements AppModule {
   }
 
   private buildCountrySearchItems(): { id: string; title: string; subtitle: string; data: { code: string; name: string } }[] {
-    const panelScores = (this.ctx.panels['cii'] as CIIPanel | undefined)?.getScores() ?? [];
+    const panelScores = (this.ctx.panels.cii as CIIPanel | undefined)?.getScores() ?? [];
     const scores = panelScores.length > 0 ? panelScores : calculateCII();
     const ciiByCode = new Map(scores.map((score) => [score.code, score]));
     return Object.entries(TIER1_COUNTRIES).map(([code, name]) => {

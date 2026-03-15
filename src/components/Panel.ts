@@ -725,7 +725,7 @@ export class Panel {
     const children: (HTMLElement | string)[] = [radarEl, msgEl];
 
     if (this.retryCallback) {
-      const backoffSeconds = autoRetrySeconds ?? Math.min(15 * Math.pow(2, this.retryAttempt), 180);
+      const backoffSeconds = autoRetrySeconds ?? Math.min(15 * 2 ** this.retryAttempt, 180);
       this.retryAttempt++;
       let remaining = Math.round(backoffSeconds);
       const countdownEl = h('div', { className: 'panel-error-countdown' },

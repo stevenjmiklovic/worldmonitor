@@ -1,3 +1,4 @@
+// boundary-ignore: AppContext is an aggregate type that lives in app/ by design
 import type { AppContext } from '@/app/app-context';
 import type {
   DomainAdapter,
@@ -100,7 +101,6 @@ export class CorrelationEngine {
         return this.clusterByCountry(signals);
       case 'entity':
         return this.clusterByEntity(signals);
-      case 'geographic':
       default:
         return this.clusterByProximity(signals, adapter.spatialRadius);
     }

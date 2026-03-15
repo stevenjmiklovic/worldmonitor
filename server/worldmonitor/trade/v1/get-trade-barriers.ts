@@ -44,7 +44,7 @@ function parseRows(data: any): TariffRow[] {
   for (const row of dataset) {
     const year = parseInt(row.Year ?? row.year ?? '0', 10);
     const value = parseFloat(row.Value ?? row.value ?? '');
-    if (isNaN(year) || isNaN(value)) continue;
+    if (Number.isNaN(year) || Number.isNaN(value)) continue;
 
     const countryCode = String(row.ReportingEconomyCode ?? '');
     rows.push({

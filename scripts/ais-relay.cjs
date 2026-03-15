@@ -262,7 +262,7 @@ let upstreamPaused = false;
 let upstreamQueue = [];
 let upstreamQueueReadIndex = 0;
 let upstreamDrainScheduled = false;
-let clients = new Set();
+const clients = new Set();
 let messageCount = 0;
 let droppedMessages = 0;
 const requestRateBuckets = new Map(); // key: route:ip -> { count, resetAt }
@@ -954,7 +954,7 @@ async function orefBootstrapHistoryWithRetry() {
       const msg = redactOrefError(err?.message || String(err));
       console.warn(`[Relay] OREF upstream bootstrap attempt ${attempt}/${MAX_ATTEMPTS} failed: ${msg}`);
       if (attempt < MAX_ATTEMPTS) {
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 1000;
+        const delay = BASE_DELAY_MS * 2 ** (attempt - 1) + Math.random() * 1000;
         await new Promise(r => setTimeout(r, delay));
       }
     }
@@ -1112,7 +1112,7 @@ async function startUcdpSeedLoop() {
 // ─────────────────────────────────────────────────────────────
 const SAT_SEED_INTERVAL_MS = 7_200_000;
 const SAT_SEED_TTL = 14_400;
-const SAT_GROUPS = ['military', 'resource', 'active'];
+const SAT_GROUPS = ['military', 'resource'];
 
 const SAT_NAME_FILTERS = [
   /^YAOGAN/i, /^GAOFEN/i, /^JILIN/i,
@@ -2103,9 +2103,9 @@ function cyberNormCountry(v) { const r = cyberClean(String(v ?? ''), 64); if (!r
 function cyberToMs(v) {
   if (!v) return 0;
   const raw = cyberClean(String(v), 80); if (!raw) return 0;
-  const d1 = new Date(raw); if (!isNaN(d1.getTime())) return d1.getTime();
+  const d1 = new Date(raw); if (!Number.isNaN(d1.getTime())) return d1.getTime();
   const d2 = new Date(raw.replace(' UTC', 'Z').replace(' GMT', 'Z').replace(' ', 'T'));
-  return isNaN(d2.getTime()) ? 0 : d2.getTime();
+  return Number.isNaN(d2.getTime()) ? 0 : d2.getTime();
 }
 function cyberNormTags(input, max) {
   const tags = Array.isArray(input) ? input : typeof input === 'string' ? input.split(/[;,|]/g) : [];
@@ -3191,7 +3191,7 @@ async function seedUsaSpending() {
       recipientName: String(r['Recipient Name'] || 'Unknown'),
       amount: Number(r['Award Amount']) || 0,
       agency: String(r['Awarding Agency'] || 'Unknown'),
-      description: String(r['Description'] || '').slice(0, 200),
+      description: String(r.Description || '').slice(0, 200),
       startDate: String(r['Start Date'] || ''),
       awardType: AWARD_TYPE_MAP[String(r['Award Type'] || '')] || 'other',
     }));
@@ -3296,7 +3296,7 @@ function techEventsParseRSS(rssText) {
     let startDate = null;
     if (dateMatch) {
       const parsed = new Date(dateMatch[1]);
-      if (!isNaN(parsed.getTime())) startDate = parsed.toISOString().split('T')[0];
+      if (!Number.isNaN(parsed.getTime())) startDate = parsed.toISOString().split('T')[0];
     }
     if (!startDate) continue;
     if (new Date(startDate) < new Date(new Date().toISOString().split('T')[0])) continue;
@@ -3561,7 +3561,7 @@ async function wbFetchProgress() {
       const data = raw[1]
         .filter(e => e.value !== null && e.value !== undefined)
         .map(e => ({ year: parseInt(e.date, 10), value: e.value }))
-        .filter(d => !isNaN(d.year))
+        .filter(d => !Number.isNaN(d.year))
         .sort((a, b) => a.year - b.year);
       results.push({ id: ind.id, code: ind.code, data, invertTrend: ind.invertTrend });
     } catch (e) {
@@ -3592,7 +3592,7 @@ async function wbFetchRenewable() {
     }
     for (const arr of Object.values(byRegion)) arr.sort((a, b) => a.year - b.year);
 
-    const worldData = byRegion['WLD'] || byRegion['1W'] || [];
+    const worldData = byRegion.WLD || byRegion['1W'] || [];
     const latest = worldData.length ? worldData[worldData.length - 1] : null;
     const regions = [];
     for (const code of WB_RENEWABLE_REGIONS) {
@@ -3692,6 +3692,7 @@ const PORTWATCH_CHOKEPOINT_NAMES = [
   { name: 'Lombok Strait', id: 'lombok_strait' },
 ];
 let portwatchSeedInFlight = false;
+let latestPortwatchData = null;
 
 function pwFormatDate(ts) {
   const d = new Date(ts);
@@ -3709,12 +3710,18 @@ function pwComputeWowChangePct(history) {
   return Math.round(((thisWeek - lastWeek) / lastWeek) * 1000) / 10;
 }
 
+function pwEpochToTimestamp(epochMs) {
+  const d = new Date(epochMs);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `timestamp '${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}'`;
+}
+
 async function pwFetchAllPages(portname, sinceEpoch) {
   const all = [];
   let offset = 0;
   for (;;) {
     const params = new URLSearchParams({
-      where: `portname='${portname.replace(/'/g, "''")}' AND date >= ${sinceEpoch}`,
+      where: `portname='${portname.replace(/'/g, "''")}' AND date >= ${pwEpochToTimestamp(sinceEpoch)}`,
       outFields: 'date,n_tanker,n_cargo,n_total',
       f: 'json',
       resultOffset: String(offset),
@@ -3775,9 +3782,11 @@ async function seedPortWatch() {
       console.warn('[PortWatch] No data fetched — skipping');
       return;
     }
+    latestPortwatchData = result;
     const ok = await upstashSet(PORTWATCH_REDIS_KEY, result, PORTWATCH_TTL);
     await upstashSet('seed-meta:supply_chain:portwatch', { fetchedAt: Date.now(), recordCount: Object.keys(result).length }, 604800);
     console.log(`[PortWatch] Seeded ${Object.keys(result).length} chokepoints (redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    seedTransitSummaries().catch(e => console.warn('[TransitSummary] Post-PortWatch seed error:', e?.message || e));
   } catch (e) {
     console.warn('[PortWatch] Seed error:', e?.message || e);
   } finally {
@@ -3797,66 +3806,78 @@ async function startPortWatchSeedLoop() {
   }, PORTWATCH_SEED_INTERVAL_MS).unref?.();
 }
 
-const CORRIDOR_RISK_API_KEY = process.env.CORRIDOR_RISK_API_KEY || '';
-const CORRIDOR_RISK_BASE_URL = 'https://api.corridorrisk.io/v1/corridors';
+const CORRIDOR_RISK_BASE_URL = 'https://corridorrisk.io/api/corridors';
 const CORRIDOR_RISK_REDIS_KEY = 'supply_chain:corridorrisk:v1';
 const CORRIDOR_RISK_TTL = 7200;
 const CORRIDOR_RISK_SEED_INTERVAL_MS = 60 * 60 * 1000;
-const CORRIDOR_RISK_NAMES = [
-  { name: 'Suez', id: 'suez' },
-  { name: 'Malacca', id: 'malacca_strait' },
-  { name: 'Hormuz', id: 'hormuz_strait' },
-  { name: 'Bab el-Mandeb', id: 'bab_el_mandeb' },
-  { name: 'Panama', id: 'panama' },
-  { name: 'Taiwan', id: 'taiwan_strait' },
-  { name: 'Cape of Good Hope', id: 'cape_of_good_hope' },
+// API name -> canonical chokepoint ID (partial substring match)
+const CORRIDOR_RISK_NAME_MAP = [
+  { pattern: 'hormuz', id: 'hormuz_strait' },
+  { pattern: 'bab-el-mandeb', id: 'bab_el_mandeb' },
+  { pattern: 'red sea', id: 'bab_el_mandeb' },
+  { pattern: 'suez', id: 'suez' },
+  { pattern: 'south china sea', id: 'taiwan_strait' },
+  { pattern: 'black sea', id: 'bosphorus' },
 ];
 let corridorRiskSeedInFlight = false;
+let latestCorridorRiskData = null;
 
 async function seedCorridorRisk() {
-  if (!CORRIDOR_RISK_API_KEY) return;
-  if (corridorRiskSeedInFlight) return;
+  if (corridorRiskSeedInFlight) { console.log('[CorridorRisk] Skipped (already in-flight)'); return; }
   corridorRiskSeedInFlight = true;
+  console.log('[CorridorRisk] Fetching...');
   const t0 = Date.now();
   try {
     const resp = await fetch(CORRIDOR_RISK_BASE_URL, {
       headers: {
-        Authorization: `Bearer ${CORRIDOR_RISK_API_KEY}`,
         Accept: 'application/json',
         'User-Agent': CHROME_UA,
+        Referer: 'https://corridorrisk.io/dashboard.html',
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
     });
     if (!resp.ok) {
-      console.warn(`[CorridorRisk] HTTP ${resp.status}`);
+      const body = await resp.text().catch(() => '');
+      console.warn(`[CorridorRisk] HTTP ${resp.status} (${resp.headers.get('content-type') || 'unknown'}) — ${body.slice(0, 200)}`);
       return;
     }
-    const body = await resp.json();
-    const corridors = Array.isArray(body) ? body : body.data;
-    if (!corridors?.length) {
+    const text = await resp.text();
+    if (text.startsWith('<')) {
+      console.warn(`[CorridorRisk] Got HTML instead of JSON (Cloudflare challenge?) — ${text.slice(0, 150)}`);
+      return;
+    }
+    const corridors = JSON.parse(text);
+    if (!Array.isArray(corridors) || !corridors.length) {
       console.warn('[CorridorRisk] No corridors returned — skipping');
       return;
     }
-    const crNameMap = new Map(CORRIDOR_RISK_NAMES.map(c => [c.name.toLowerCase(), c.id]));
     const result = {};
     for (const corridor of corridors) {
-      const name = corridor.name;
-      if (!name) continue;
-      const id = crNameMap.get(name.toLowerCase());
-      if (!id) continue;
-      result[id] = {
-        riskLevel: String(corridor.risk_level ?? ''),
+      const name = (corridor.name || '').toLowerCase();
+      const mapping = CORRIDOR_RISK_NAME_MAP.find(m => name.includes(m.pattern));
+      if (!mapping) continue;
+      const score = Number(corridor.score ?? 0);
+      const riskLevel = score >= 70 ? 'critical' : score >= 50 ? 'high' : score >= 30 ? 'elevated' : 'normal';
+      result[mapping.id] = {
+        riskLevel,
+        riskScore: score,
         incidentCount7d: Number(corridor.incident_count_7d ?? 0),
+        eventCount7d: Number(corridor.event_count_7d ?? 0),
         disruptionPct: Number(corridor.disruption_pct ?? 0),
+        vesselCount: Number(corridor.vessel_count ?? 0),
+        riskSummary: String(corridor.risk_summary || '').slice(0, 200),
+        riskReportAction: String((corridor.risk_report?.action) || '').slice(0, 500),
       };
     }
     if (Object.keys(result).length === 0) {
       console.warn('[CorridorRisk] No matching corridors — skipping');
       return;
     }
+    latestCorridorRiskData = result;
     const ok = await upstashSet(CORRIDOR_RISK_REDIS_KEY, result, CORRIDOR_RISK_TTL);
     await upstashSet('seed-meta:supply_chain:corridorrisk', { fetchedAt: Date.now(), recordCount: Object.keys(result).length }, 604800);
     console.log(`[CorridorRisk] Seeded ${Object.keys(result).length} corridors (redis: ${ok ? 'OK' : 'FAIL'}) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    seedTransitSummaries().catch(e => console.warn('[TransitSummary] Post-CorridorRisk seed error:', e?.message || e));
   } catch (e) {
     console.warn('[CorridorRisk] Seed error:', e?.message || e);
   } finally {
@@ -3869,15 +3890,275 @@ async function startCorridorRiskSeedLoop() {
     console.log('[CorridorRisk] Disabled (no Upstash Redis)');
     return;
   }
-  if (!CORRIDOR_RISK_API_KEY) {
-    console.log('[CorridorRisk] Disabled (no CORRIDOR_RISK_API_KEY)');
-    return;
-  }
   console.log(`[CorridorRisk] Seed loop starting (interval ${CORRIDOR_RISK_SEED_INTERVAL_MS / 1000 / 60}min)`);
   seedCorridorRisk().catch(e => console.warn('[CorridorRisk] Initial seed error:', e?.message || e));
   setInterval(() => {
     seedCorridorRisk().catch(e => console.warn('[CorridorRisk] Seed error:', e?.message || e));
   }, CORRIDOR_RISK_SEED_INTERVAL_MS).unref?.();
+}
+
+// ─────────────────────────────────────────────────────────────
+// USNI Fleet Tracker seed loop — weekly article → Redis
+// ─────────────────────────────────────────────────────────────
+
+const USNI_SEED_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const USNI_CACHE_KEY = 'usni-fleet:sebuf:v1';
+const USNI_STALE_CACHE_KEY = 'usni-fleet:sebuf:stale:v1';
+const USNI_CACHE_TTL = 21600; // 6 hours
+const USNI_STALE_TTL = 604800; // 7 days
+let usniSeedInFlight = false;
+
+const USNI_HULL_TYPE_MAP = {
+  CVN: 'carrier', CV: 'carrier',
+  DDG: 'destroyer', CG: 'destroyer',
+  LHD: 'amphibious', LHA: 'amphibious', LPD: 'amphibious', LSD: 'amphibious', LCC: 'amphibious',
+  SSN: 'submarine', SSBN: 'submarine', SSGN: 'submarine',
+  FFG: 'frigate', LCS: 'frigate',
+  MCM: 'patrol', PC: 'patrol',
+  AS: 'auxiliary', ESB: 'auxiliary', ESD: 'auxiliary',
+  'T-AO': 'auxiliary', 'T-AKE': 'auxiliary', 'T-AOE': 'auxiliary',
+  'T-ARS': 'auxiliary', 'T-ESB': 'auxiliary', 'T-EPF': 'auxiliary',
+  'T-AGOS': 'research', 'T-AGS': 'research', 'T-AGM': 'research', AGOS: 'research',
+};
+
+const USNI_REGION_COORDS = {
+  'Philippine Sea': { lat: 18.0, lon: 130.0 },
+  'South China Sea': { lat: 14.0, lon: 115.0 },
+  'East China Sea': { lat: 28.0, lon: 125.0 },
+  'Sea of Japan': { lat: 40.0, lon: 135.0 },
+  'Arabian Sea': { lat: 18.0, lon: 63.0 },
+  'Red Sea': { lat: 20.0, lon: 38.0 },
+  'Mediterranean Sea': { lat: 35.0, lon: 18.0 },
+  'Eastern Mediterranean': { lat: 34.5, lon: 33.0 },
+  'Western Mediterranean': { lat: 37.0, lon: 3.0 },
+  'Persian Gulf': { lat: 26.5, lon: 52.0 },
+  'Gulf of Oman': { lat: 24.5, lon: 58.5 },
+  'Gulf of Aden': { lat: 12.0, lon: 47.0 },
+  'Caribbean Sea': { lat: 15.0, lon: -73.0 },
+  'North Atlantic': { lat: 45.0, lon: -30.0 },
+  'Atlantic Ocean': { lat: 30.0, lon: -40.0 },
+  'Western Atlantic': { lat: 30.0, lon: -60.0 },
+  'Pacific Ocean': { lat: 20.0, lon: -150.0 },
+  'Eastern Pacific': { lat: 18.0, lon: -125.0 },
+  'Western Pacific': { lat: 20.0, lon: 140.0 },
+  'Indian Ocean': { lat: -5.0, lon: 75.0 },
+  Antarctic: { lat: -70.0, lon: 20.0 },
+  'Baltic Sea': { lat: 58.0, lon: 20.0 },
+  'Black Sea': { lat: 43.5, lon: 34.0 },
+  'Bay of Bengal': { lat: 14.0, lon: 87.0 },
+  Yokosuka: { lat: 35.29, lon: 139.67 },
+  Japan: { lat: 35.29, lon: 139.67 },
+  Sasebo: { lat: 33.16, lon: 129.72 },
+  Guam: { lat: 13.45, lon: 144.79 },
+  'Pearl Harbor': { lat: 21.35, lon: -157.95 },
+  'San Diego': { lat: 32.68, lon: -117.15 },
+  Norfolk: { lat: 36.95, lon: -76.30 },
+  Mayport: { lat: 30.39, lon: -81.40 },
+  Bahrain: { lat: 26.23, lon: 50.55 },
+  Rota: { lat: 36.63, lon: -6.35 },
+  'Diego Garcia': { lat: -7.32, lon: 72.42 },
+  Djibouti: { lat: 11.55, lon: 43.15 },
+  Singapore: { lat: 1.35, lon: 103.82 },
+  'Souda Bay': { lat: 35.49, lon: 24.08 },
+  Naples: { lat: 40.84, lon: 14.25 },
+};
+
+function usniStripHtml(html) {
+  return html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#8217;/g, "'")
+    .replace(/&#8220;/g, '"').replace(/&#8221;/g, '"').replace(/&#8211;/g, '\u2013')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function usniHullToType(hull) {
+  if (!hull) return 'unknown';
+  for (const [prefix, type] of Object.entries(USNI_HULL_TYPE_MAP)) {
+    if (hull.startsWith(prefix)) return type;
+  }
+  return 'unknown';
+}
+
+function usniDetectStatus(text) {
+  if (!text) return 'unknown';
+  const l = text.toLowerCase();
+  if (l.includes('deployed') || l.includes('deployment')) return 'deployed';
+  if (l.includes('underway') || l.includes('transiting') || l.includes('transit')) return 'underway';
+  if (l.includes('homeport') || l.includes('in port') || l.includes('pierside') || l.includes('returned')) return 'in-port';
+  return 'unknown';
+}
+
+function usniExtractHomePort(text) {
+  const m = text.match(/homeported (?:at|in) ([^.,]+)/i) || text.match(/home[ -]?ported (?:at|in) ([^.,]+)/i);
+  return m ? m[1].trim() : '';
+}
+
+function usniGetRegionCoords(regionText) {
+  const norm = regionText.replace(/^(In the|In|The)\s+/i, '').replace(/\s+/g, ' ').trim();
+  if (USNI_REGION_COORDS[norm]) return USNI_REGION_COORDS[norm];
+  const lower = norm.toLowerCase();
+  for (const [key, coords] of Object.entries(USNI_REGION_COORDS)) {
+    if (key.toLowerCase() === lower || lower.includes(key.toLowerCase()) || key.toLowerCase().includes(lower)) return coords;
+  }
+  return null;
+}
+
+function usniParseLeadingInt(text) {
+  const m = text.match(/\d{1,3}(?:,\d{3})*/);
+  return m ? parseInt(m[0].replace(/,/g, ''), 10) : undefined;
+}
+
+function usniExtractBattleForceSummary(tableHtml) {
+  const rows = Array.from(tableHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi));
+  if (rows.length < 2) return undefined;
+  const headers = Array.from(rows[0][1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map(m => usniStripHtml(m[1]).toLowerCase());
+  const values = Array.from(rows[1][1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map(m => usniParseLeadingInt(usniStripHtml(m[1])));
+  const summary = { totalShips: 0, deployed: 0, underway: 0 };
+  let matched = false;
+  for (let i = 0; i < headers.length; i++) {
+    const label = headers[i] || '';
+    const val = values[i];
+    if (!Number.isFinite(val)) continue;
+    if (label.includes('battle force') || label.includes('total') || label.includes('ships')) { summary.totalShips = val; matched = true; }
+    else if (label.includes('deployed')) { summary.deployed = val; matched = true; }
+    else if (label.includes('underway')) { summary.underway = val; matched = true; }
+  }
+  return matched ? summary : undefined;
+}
+
+function usniParseArticle(html, articleUrl, articleDate, articleTitle) {
+  const warnings = [];
+  const vessels = [];
+  const vesselByKey = new Map();
+  const strikeGroups = [];
+  const regionsSet = new Set();
+
+  let battleForceSummary;
+  const tableMatch = html.match(/<table[^>]*>([\s\S]*?)<\/table>/i);
+  if (tableMatch) battleForceSummary = usniExtractBattleForceSummary(tableMatch[1]);
+
+  const h2Parts = html.split(/<h2[^>]*>/i);
+  for (let i = 1; i < h2Parts.length; i++) {
+    const part = h2Parts[i];
+    const h2End = part.indexOf('</h2>');
+    if (h2End === -1) continue;
+    const regionName = usniStripHtml(part.substring(0, h2End)).replace(/^(In the|In|The)\s+/i, '').replace(/\s+/g, ' ').trim();
+    if (!regionName) continue;
+    regionsSet.add(regionName);
+    const coords = usniGetRegionCoords(regionName);
+    if (!coords) warnings.push(`Unknown region: "${regionName}"`);
+    const regionLat = coords?.lat ?? 0;
+    const regionLon = coords?.lon ?? 0;
+    const regionContent = part.substring(h2End + 5);
+    const h3Parts = regionContent.split(/<h3[^>]*>/i);
+    let currentSG = null;
+    for (let j = 0; j < h3Parts.length; j++) {
+      const section = h3Parts[j];
+      if (j > 0) {
+        const h3End = section.indexOf('</h3>');
+        if (h3End !== -1) {
+          const sgName = usniStripHtml(section.substring(0, h3End));
+          if (sgName) { currentSG = { name: sgName, carrier: '', airWing: '', destroyerSquadron: '', escorts: [] }; strikeGroups.push(currentSG); }
+        }
+      }
+      const shipRegex = /(USS|USNS)\s+(?:<[^>]+>)?([^<(]+?)(?:<\/[^>]+>)?\s*\(([^)]+)\)/gi;
+      let match;
+      const sectionText = usniStripHtml(section);
+      const deploymentStatus = usniDetectStatus(sectionText);
+      const homePort = usniExtractHomePort(sectionText);
+      const activityDesc = sectionText.length > 10 ? sectionText.substring(0, 200).trim() : '';
+      while ((match = shipRegex.exec(section)) !== null) {
+        const prefix = match[1].toUpperCase();
+        const shipName = match[2].trim();
+        const hullNumber = match[3].trim();
+        const vesselType = usniHullToType(hullNumber);
+        if (prefix === 'USS' && vesselType === 'carrier' && currentSG) currentSG.carrier = `USS ${shipName} (${hullNumber})`;
+        if (currentSG) currentSG.escorts.push(`${prefix} ${shipName} (${hullNumber})`);
+        const key = `${regionName}|${hullNumber.toUpperCase()}`;
+        if (!vesselByKey.has(key)) {
+          const v = { name: `${prefix} ${shipName}`, hullNumber, vesselType, region: regionName, regionLat, regionLon, deploymentStatus, homePort, strikeGroup: currentSG?.name || '', activityDescription: activityDesc, articleUrl, articleDate };
+          vessels.push(v);
+          vesselByKey.set(key, v);
+        }
+      }
+    }
+  }
+
+  for (const sg of strikeGroups) {
+    const wingMatch = html.match(new RegExp(sg.name + '[\\s\\S]{0,500}Carrier Air Wing\\s*(\\w+)', 'i'));
+    if (wingMatch) sg.airWing = `Carrier Air Wing ${wingMatch[1]}`;
+    const desronMatch = html.match(new RegExp(sg.name + '[\\s\\S]{0,500}Destroyer Squadron\\s*(\\w+)', 'i'));
+    if (desronMatch) sg.destroyerSquadron = `Destroyer Squadron ${desronMatch[1]}`;
+    sg.escorts = [...new Set(sg.escorts)];
+  }
+
+  return {
+    articleUrl, articleDate, articleTitle,
+    battleForceSummary: battleForceSummary || { totalShips: 0, deployed: 0, underway: 0 },
+    vessels, strikeGroups, regions: [...regionsSet],
+    parsingWarnings: warnings,
+    timestamp: Date.now(),
+  };
+}
+
+async function seedUSNIFleet() {
+  if (usniSeedInFlight) return;
+  usniSeedInFlight = true;
+  const t0 = Date.now();
+  try {
+    const wpData = await new Promise((resolve, reject) => {
+      const req = https.get('https://news.usni.org/wp-json/wp/v2/posts?categories=4137&per_page=1', {
+        headers: { 'User-Agent': CHROME_UA, Accept: 'application/json', 'Accept-Encoding': 'gzip' },
+        timeout: 15000,
+      }, (resp) => {
+        const chunks = [];
+        const stream = resp.headers['content-encoding'] === 'gzip' ? resp.pipe(zlib.createGunzip()) : resp;
+        stream.on('data', (chunk) => chunks.push(chunk));
+        stream.on('end', () => {
+          try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+          catch (e) { reject(e); }
+        });
+        stream.on('error', reject);
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('USNI fetch timeout')); });
+    });
+
+    if (!Array.isArray(wpData) || !wpData.length) {
+      console.warn('[USNI] No fleet tracker articles found');
+      return;
+    }
+
+    const post = wpData[0];
+    const articleUrl = post.link || `https://news.usni.org/?p=${post.id}`;
+    const articleDate = post.date || new Date().toISOString();
+    const articleTitle = usniStripHtml(post.title?.rendered || 'USNI Fleet Tracker');
+    const htmlContent = post.content?.rendered || '';
+    if (!htmlContent) { console.warn('[USNI] Empty article content'); return; }
+
+    const report = usniParseArticle(htmlContent, articleUrl, articleDate, articleTitle);
+    const ok = await upstashSet(USNI_CACHE_KEY, report, USNI_CACHE_TTL);
+    await upstashSet(USNI_STALE_CACHE_KEY, report, USNI_STALE_TTL);
+    await upstashSet('seed-meta:military:usni-fleet', { fetchedAt: Date.now(), recordCount: report.vessels.length }, 604800);
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    console.log(`[USNI] Seeded ${report.vessels.length} vessels, ${report.strikeGroups.length} CSGs, ${report.regions.length} regions (redis: ${ok ? 'OK' : 'FAIL'}) in ${elapsed}s`);
+    if (report.parsingWarnings.length > 0) console.warn('[USNI] Warnings:', report.parsingWarnings.join('; '));
+  } catch (e) {
+    console.warn('[USNI] Seed error:', e?.message || e);
+  } finally {
+    usniSeedInFlight = false;
+  }
+}
+
+async function startUSNISeedLoop() {
+  if (!UPSTASH_ENABLED) {
+    console.log('[USNI] Disabled (no Upstash Redis)');
+    return;
+  }
+  console.log(`[USNI] Seed loop starting (interval ${USNI_SEED_INTERVAL_MS / 1000 / 60 / 60}h)`);
+  seedUSNIFleet().catch(e => console.warn('[USNI] Initial seed error:', e?.message || e));
+  setInterval(() => {
+    seedUSNIFleet().catch(e => console.warn('[USNI] Seed error:', e?.message || e));
+  }, USNI_SEED_INTERVAL_MS).unref?.();
 }
 
 function gzipSyncBuffer(body) {
@@ -4068,7 +4349,7 @@ function getRelayMetricsBucket(nowSec = getMetricsNowSec()) {
 function incrementRelayMetric(field, amount = 1) {
   const bucket = getRelayMetricsBucket();
   bucket[field] = (bucket[field] || 0) + amount;
-  if (Object.prototype.hasOwnProperty.call(relayMetricsLifetime, field)) {
+  if (Object.hasOwn(relayMetricsLifetime, field)) {
     relayMetricsLifetime[field] += amount;
   }
 }
@@ -4709,6 +4990,125 @@ setInterval(() => {
   seedChokepointTransits().catch(err => console.error('[Transit] Seed error:', err.message));
 }, CHOKEPOINT_TRANSIT_INTERVAL_MS).unref?.();
 
+// --- Pre-assembled Transit Summaries (Railway advantage: avoids large Redis reads on Vercel) ---
+const TRANSIT_SUMMARY_REDIS_KEY = 'supply_chain:transit-summaries:v1';
+const TRANSIT_SUMMARY_TTL = 900; // 15 min
+const TRANSIT_SUMMARY_INTERVAL_MS = 10 * 60 * 1000;
+
+// Threat levels for anomaly detection.
+// IMPORTANT: Must stay in sync with CHOKEPOINTS[].threatLevel in
+// server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts
+// Only war_zone and critical trigger anomaly signals.
+const CHOKEPOINT_THREAT_LEVELS = {
+  suez: 'high', malacca_strait: 'normal', hormuz_strait: 'war_zone',
+  bab_el_mandeb: 'critical', panama: 'normal', taiwan_strait: 'elevated',
+  cape_of_good_hope: 'normal', gibraltar: 'normal', bosphorus: 'elevated',
+  korea_strait: 'normal', dover_strait: 'normal', kerch_strait: 'war_zone',
+  lombok_strait: 'normal',
+};
+
+// ID mapping: relay geofence name -> canonical ID
+const RELAY_NAME_TO_ID = {
+  'Suez Canal': 'suez', 'Malacca Strait': 'malacca_strait',
+  'Strait of Hormuz': 'hormuz_strait', 'Bab el-Mandeb Strait': 'bab_el_mandeb',
+  'Panama Canal': 'panama', 'Taiwan Strait': 'taiwan_strait',
+  'Cape of Good Hope': 'cape_of_good_hope', 'Gibraltar Strait': 'gibraltar',
+  'Bosporus Strait': 'bosphorus', 'Korea Strait': 'korea_strait',
+  'Dover Strait': 'dover_strait', 'Kerch Strait': 'kerch_strait',
+  'Lombok Strait': 'lombok_strait',
+  'South China Sea': null, 'Black Sea': null, // area geofences, not chokepoints
+};
+
+// Duplicated from server/worldmonitor/supply-chain/v1/_scoring.mjs because
+// ais-relay.cjs is CJS and cannot import .mjs modules. Keep in sync.
+function detectTrafficAnomalyRelay(history, threatLevel) {
+  if (!history || history.length < 37) return { dropPct: 0, signal: false };
+  const sorted = [...history].sort((a, b) => b.date.localeCompare(a.date));
+  let recent7 = 0, baseline30 = 0;
+  for (let i = 0; i < 7 && i < sorted.length; i++) recent7 += sorted[i].total;
+  for (let i = 7; i < 37 && i < sorted.length; i++) baseline30 += sorted[i].total;
+  const baselineAvg7 = (baseline30 / Math.min(30, sorted.length - 7)) * 7;
+  if (baselineAvg7 < 14) return { dropPct: 0, signal: false };
+  const dropPct = Math.round(((baselineAvg7 - recent7) / baselineAvg7) * 100);
+  const isHighThreat = threatLevel === 'war_zone' || threatLevel === 'critical';
+  return { dropPct, signal: dropPct >= 50 && isHighThreat };
+}
+
+async function seedTransitSummaries() {
+  // Hydrate from Redis on cold start (in-memory state lost after relay restart)
+  if (!latestPortwatchData) {
+    const persisted = await upstashGet(PORTWATCH_REDIS_KEY);
+    if (persisted && typeof persisted === 'object' && Object.keys(persisted).length > 0) {
+      latestPortwatchData = persisted;
+      console.log(`[TransitSummary] Hydrated PortWatch from Redis (${Object.keys(persisted).length} chokepoints)`);
+    }
+  }
+  if (!latestCorridorRiskData) {
+    const persisted = await upstashGet(CORRIDOR_RISK_REDIS_KEY);
+    if (persisted && typeof persisted === 'object' && Object.keys(persisted).length > 0) {
+      latestCorridorRiskData = persisted;
+      console.log(`[TransitSummary] Hydrated CorridorRisk from Redis (${Object.keys(persisted).length} corridors)`);
+    }
+  }
+
+  const pw = latestPortwatchData;
+  if (!pw || Object.keys(pw).length === 0) return;
+
+  const now = Date.now();
+  const summaries = {};
+
+  for (const [cpId, cpData] of Object.entries(pw)) {
+    const threatLevel = CHOKEPOINT_THREAT_LEVELS[cpId] || 'normal';
+    const anomaly = detectTrafficAnomalyRelay(cpData.history, threatLevel);
+
+    // Get relay transit counts for this chokepoint
+    let relayTransit = null;
+    for (const [relayName, canonicalId] of Object.entries(RELAY_NAME_TO_ID)) {
+      if (canonicalId === cpId) {
+        const crossings = chokepointCrossings.get(relayName) || [];
+        const recent = crossings.filter(c => now - c.ts < TRANSIT_WINDOW_MS);
+        if (recent.length > 0) {
+          relayTransit = {
+            tanker: recent.filter(c => c.type === 'tanker').length,
+            cargo: recent.filter(c => c.type === 'cargo').length,
+            other: recent.filter(c => c.type === 'other').length,
+            total: recent.length,
+          };
+        }
+        break;
+      }
+    }
+
+    const cr = latestCorridorRiskData?.[cpId];
+    summaries[cpId] = {
+      todayTotal: relayTransit?.total ?? 0,
+      todayTanker: relayTransit?.tanker ?? 0,
+      todayCargo: relayTransit?.cargo ?? 0,
+      todayOther: relayTransit?.other ?? 0,
+      wowChangePct: cpData.wowChangePct ?? 0,
+      history: cpData.history ?? [],
+      riskLevel: cr?.riskLevel ?? '',
+      incidentCount7d: cr?.incidentCount7d ?? 0,
+      disruptionPct: cr?.disruptionPct ?? 0,
+      riskSummary: cr?.riskSummary ?? '',
+      riskReportAction: cr?.riskReportAction ?? '',
+      anomaly,
+    };
+  }
+
+  const ok = await upstashSet(TRANSIT_SUMMARY_REDIS_KEY, { summaries, fetchedAt: now }, TRANSIT_SUMMARY_TTL);
+  await upstashSet('seed-meta:supply_chain:transit-summaries', { fetchedAt: now, recordCount: Object.keys(summaries).length }, 604800);
+  console.log(`[TransitSummary] Seeded ${Object.keys(summaries).length} summaries (redis: ${ok ? 'OK' : 'FAIL'})`);
+}
+
+// Seed transit summaries every 10 min (same as transit counter)
+setTimeout(() => {
+  seedTransitSummaries().catch(e => console.warn('[TransitSummary] Initial seed error:', e?.message || e));
+}, 35_000);
+setInterval(() => {
+  seedTransitSummaries().catch(e => console.warn('[TransitSummary] Seed error:', e?.message || e));
+}, TRANSIT_SUMMARY_INTERVAL_MS).unref?.();
+
 // UCDP GED Events cache (persistent in-memory — Railway advantage)
 const UCDP_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const UCDP_RELAY_MAX_PAGES = 12;
@@ -4919,7 +5319,7 @@ const RSS_CACHE_MAX_ENTRIES = 200; // hard cap — ~20 allowed domains × ~5 pat
 
 function rssRecordFailure(feedUrl) {
   const prev = rssFailureCount.get(feedUrl) || 0;
-  const ttl = Math.min(RSS_NEGATIVE_CACHE_TTL_MS * Math.pow(2, prev), RSS_MAX_NEGATIVE_CACHE_TTL_MS);
+  const ttl = Math.min(RSS_NEGATIVE_CACHE_TTL_MS * 2 ** prev, RSS_MAX_NEGATIVE_CACHE_TTL_MS);
   rssFailureCount.set(feedUrl, prev + 1);
   rssBackoffUntil.set(feedUrl, Date.now() + ttl);
   return { failures: prev + 1, backoffSec: Math.round(ttl / 1000) };
@@ -5541,7 +5941,7 @@ function handleWorldBankRequest(req, res) {
   const country = wbParams.get('country');
   const countries = wbParams.get('countries');
   const years = parseInt(wbParams.get('years') || '5', 10);
-  let countryList = country || (countries ? countries.split(',').join(';') : [
+  const countryList = country || (countries ? countries.split(',').join(';') : [
     'USA','CHN','JPN','DEU','KOR','GBR','IND','ISR','SGP','TWN',
     'FRA','CAN','SWE','NLD','CHE','FIN','IRL','AUS','BRA','IDN',
     'ARE','SAU','QAT','BHR','EGY','TUR','MYS','THA','VNM','PHL',
@@ -5907,7 +6307,7 @@ setInterval(() => {
 // ── Yahoo Finance Chart Proxy ──────────────────────────────────────
 const YAHOO_CHART_CACHE_TTL_MS = 300_000; // 5 min
 const yahooChartCache = new Map(); // key: symbol:range:interval → { json, gzip, ts }
-const YAHOO_SYMBOL_RE = /^[A-Za-z0-9^=\-\.]{1,15}$/;
+const YAHOO_SYMBOL_RE = /^[A-Za-z0-9^=\-.]{1,15}$/;
 
 function handleYahooChartRequest(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -6702,7 +7102,7 @@ const server = http.createServer(async (req, res) => {
             }
             rssResponseCache.set(feedUrl, {
               data, contentType: 'application/xml', statusCode: response.statusCode, timestamp: Date.now(),
-              etag: response.headers['etag'] || null,
+              etag: response.headers.etag || null,
               lastModified: response.headers['last-modified'] || null,
             });
             if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -6951,6 +7351,7 @@ server.listen(PORT, () => {
   startTechEventsSeedLoop();
   startPortWatchSeedLoop();
   startCorridorRiskSeedLoop();
+  startUSNISeedLoop();
 });
 
 wss.on('connection', (ws, req) => {

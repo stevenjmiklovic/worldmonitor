@@ -111,29 +111,19 @@ describe('GlobeMap AIS ship traffic markers', () => {
 });
 
 // ========================================================================
-// 3. dayNight toggle suppressed in globe mode
+// 3. dayNight toggle excluded via layer catalog (renderers: ['flat'])
 // ========================================================================
 
-describe('dayNight toggle suppressed on globe', () => {
+describe('dayNight toggle excluded on globe via catalog', () => {
   const src = readSrc('src/components/GlobeMap.ts');
 
-  it('initGlobe sets layers.dayNight to false after init', () => {
-    assert.match(src, /this\.layers\.dayNight = false/,
-      'initGlobe must hard-disable dayNight layer');
+  it('dayNight exclusion is documented via catalog comment', () => {
+    assert.match(src, /dayNight toggle excluded by catalog/,
+      'GlobeMap should note dayNight exclusion via layer catalog');
   });
 
-  it('initGlobe removes dayNight toggle from UI', () => {
-    assert.match(src, /this\.hideLayerToggle\('dayNight'\)/,
-      'initGlobe must call hideLayerToggle for dayNight');
-  });
-
-  it('setLayers overrides incoming dayNight to false', () => {
-    assert.match(src, /\{ \.\.\.layers, dayNight: false \}/,
-      'setLayers must force dayNight:false regardless of incoming state');
-  });
-
-  it('enableLayer ignores dayNight calls', () => {
-    assert.match(src, /if \(layer === 'dayNight'\) return/,
-      'enableLayer must short-circuit dayNight calls');
+  it('setLayers copies incoming layers without dayNight override', () => {
+    assert.match(src, /this\.layers = \{ \.\.\.layers \};/,
+      'setLayers should spread incoming layers without forcing dayNight');
   });
 });

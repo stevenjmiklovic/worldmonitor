@@ -511,7 +511,7 @@ export class RuntimeConfigPanel extends Panel {
   private async fetchOllamaModels(select: HTMLSelectElement): Promise<void> {
     const snapshot = getRuntimeConfigSnapshot();
     const ollamaUrl = this.pendingSecrets.get('OLLAMA_API_URL')
-      || snapshot.secrets['OLLAMA_API_URL']?.value
+      || snapshot.secrets.OLLAMA_API_URL?.value
       || '';
     if (!ollamaUrl) {
       select.innerHTML = '<option value="" disabled selected>Set Ollama URL first</option>';
@@ -519,7 +519,7 @@ export class RuntimeConfigPanel extends Panel {
     }
 
     const currentModel = this.pendingSecrets.get('OLLAMA_MODEL')
-      || snapshot.secrets['OLLAMA_MODEL']?.value
+      || snapshot.secrets.OLLAMA_MODEL?.value
       || '';
 
     try {

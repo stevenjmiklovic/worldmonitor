@@ -92,7 +92,7 @@ async function pipelineRequest(url, token, commands, attempt = 1) {
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
     if (attempt < MAX_RETRIES) {
-      const delay = RETRY_BASE_MS * Math.pow(2, attempt - 1);
+      const delay = RETRY_BASE_MS * 2 ** (attempt - 1);
       console.warn(`  Pipeline failed (HTTP ${resp.status}), retry ${attempt}/${MAX_RETRIES} in ${delay}ms...`);
       await sleep(delay);
       return pipelineRequest(url, token, commands, attempt + 1);

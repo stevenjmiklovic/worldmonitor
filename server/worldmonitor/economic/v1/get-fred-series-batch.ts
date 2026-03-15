@@ -45,7 +45,7 @@ async function fetchSingleFred(seriesId: string, limit: number): Promise<FredSer
 
     const obsData = await obsResponse.json() as { observations?: Array<{ date: string; value: string }> };
     const observations: FredObservation[] = (obsData.observations || [])
-      .map((obs) => { const v = parseFloat(obs.value); return isNaN(v) || obs.value === '.' ? null : { date: obs.date, value: v }; })
+      .map((obs) => { const v = parseFloat(obs.value); return Number.isNaN(v) || obs.value === '.' ? null : { date: obs.date, value: v }; })
       .filter((o): o is FredObservation => o !== null)
       .reverse();
 

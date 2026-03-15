@@ -122,7 +122,7 @@ export class App {
       if (panel) primeTask('etf-flows', () => panel.fetchData());
     }
     if (shouldPrime('stablecoins')) {
-      const panel = this.state.panels['stablecoins'] as StablecoinPanel | undefined;
+      const panel = this.state.panels.stablecoins as StablecoinPanel | undefined;
       if (panel) primeTask('stablecoins', () => panel.fetchData());
     }
     if (shouldPrime('telegram-intel')) {
@@ -338,7 +338,7 @@ export class App {
       }
     }
 
-    let initialUrlState: ParsedMapUrlState | null = parseMapUrlState(window.location.search, mapLayers);
+    const initialUrlState: ParsedMapUrlState | null = parseMapUrlState(window.location.search, mapLayers);
     if (initialUrlState.layers) {
       mapLayers = sanitizeLayersForVariant(initialUrlState.layers, currentVariant as MapVariant);
       initialUrlState.layers = mapLayers;
@@ -760,6 +760,12 @@ export class App {
           intervalMs: REFRESH_INTERVALS.predictions,
           condition: () => this.isPanelNearViewport('polymarket'),
         },
+        {
+          name: 'forecasts',
+          fn: () => this.dataLoader.loadForecasts(),
+          intervalMs: REFRESH_INTERVALS.forecasts,
+          condition: () => this.isPanelNearViewport('forecast'),
+        },
         { name: 'pizzint', fn: () => this.dataLoader.loadPizzInt(), intervalMs: 10 * 60 * 1000 },
         { name: 'natural', fn: () => this.dataLoader.loadNatural(), intervalMs: 60 * 60 * 1000, condition: () => this.state.mapLayers.natural },
         { name: 'weather', fn: () => this.dataLoader.loadWeatherAlerts(), intervalMs: 10 * 60 * 1000, condition: () => this.state.mapLayers.weather },
@@ -811,7 +817,7 @@ export class App {
     );
     this.refreshScheduler.scheduleRefresh(
       'stablecoins',
-      () => (this.state.panels['stablecoins'] as StablecoinPanel).fetchData(),
+      () => (this.state.panels.stablecoins as StablecoinPanel).fetchData(),
       15 * 60_000,
       () => this.isPanelNearViewport('stablecoins')
     );

@@ -154,8 +154,6 @@ async function fetchAllPredictions() {
             tags: (event.tags ?? []).map(t => t.slug),
             source: 'polymarket',
           });
-        } else {
-          continue; // no markets = no price signal, skip
         }
       }
     } catch (err) {

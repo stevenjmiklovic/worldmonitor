@@ -872,7 +872,7 @@ export class MapPopup {
 
   private getTimeUntil(date: Date | string): string {
     const d = date instanceof Date ? date : new Date(date);
-    if (isNaN(d.getTime())) return '—';
+    if (Number.isNaN(d.getTime())) return '—';
     const ms = d.getTime() - Date.now();
     if (ms <= 0) return t('popups.expired');
     const hours = Math.floor(ms / (1000 * 60 * 60));

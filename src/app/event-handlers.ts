@@ -397,7 +397,7 @@ export class EventHandlerManager implements AppModule {
     document.addEventListener('visibilitychange', this.boundVisibilityHandler);
 
     this.boundFocalPointsReadyHandler = () => {
-      (this.ctx.panels['cii'] as CIIPanel)?.refresh(true);
+      (this.ctx.panels.cii as CIIPanel)?.refresh(true);
       this.callbacks.refreshOpenCountryBrief?.();
     };
     window.addEventListener('focal-points-ready', this.boundFocalPointsReadyHandler);
@@ -972,7 +972,7 @@ export class EventHandlerManager implements AppModule {
       liquidity: 0,
     }));
     this.ctx.latestPredictions = predictions;
-    (this.ctx.panels['polymarket'] as PredictionPanel | undefined)?.renderPredictions(predictions);
+    (this.ctx.panels.polymarket as PredictionPanel | undefined)?.renderPredictions(predictions);
 
     this.ctx.map?.setHotspotLevels(snapshot.hotspotLevels);
   }

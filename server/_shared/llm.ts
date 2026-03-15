@@ -39,7 +39,7 @@ export function getProviderCredentials(provider: string): ProviderCredentials | 
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const apiKey = process.env.OLLAMA_API_KEY;
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     return {
       apiUrl: new URL('/v1/chat/completions', baseUrl).toString(),
@@ -197,7 +197,6 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult | nul
     } catch (err) {
       llmLogger.warn('Provider call failed', err instanceof Error ? err : new Error(String(err)), { provider: providerName });
       if (forcedProvider) return null;
-      continue;
     }
   }
 

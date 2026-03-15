@@ -2,22 +2,16 @@ import type {
   ServerContext,
   GetUSNIFleetReportRequest,
   GetUSNIFleetReportResponse,
-  USNIVessel,
-  USNIStrikeGroup,
-  BattleForceSummary,
   USNIFleetReport,
 } from '../../../../src/generated/server/worldmonitor/military/v1/service_server';
 
-import { getCachedJson, setCachedJson, cachedFetchJsonWithMeta } from '../../../_shared/redis';
-import { CHROME_UA } from '../../../_shared/constants';
+import { getCachedJson } from '../../../_shared/redis';
 
 const USNI_CACHE_KEY = 'usni-fleet:sebuf:v1';
 const USNI_STALE_CACHE_KEY = 'usni-fleet:sebuf:stale:v1';
-const USNI_CACHE_TTL = 21600; // 6 hours
-const USNI_STALE_TTL = 604800; // 7 days
 
 // ========================================================================
-// USNI parsing helpers
+// RPC handler (Redis-read-only — Railway relay seeds the data)
 // ========================================================================
 
 const HULL_TYPE_MAP: Record<string, string> = {
@@ -403,34 +397,25 @@ export async function getUSNIFleetReport(
   _ctx: ServerContext,
   req: GetUSNIFleetReportRequest,
 ): Promise<GetUSNIFleetReportResponse> {
+  if (req.forceRefresh) {
+    return { report: undefined, cached: false, stale: false, error: 'forceRefresh is no longer supported (data is seeded by Railway relay)' };
+  }
+
   try {
-    if (req.forceRefresh) {
-      // Bypass cachedFetchJson — fetch fresh and write both caches
-      const report = await fetchUSNIReport();
-      if (!report) return { report: undefined, cached: false, stale: false, error: 'No USNI fleet tracker articles found' };
-      await setCachedJson(USNI_CACHE_KEY, report, USNI_CACHE_TTL);
-      return { report, cached: false, stale: false, error: '' };
-    }
-
-    // Single atomic call — source tracking inside cachedFetchJsonWithMeta eliminates TOCTOU race
-    const { data: report, source } = await cachedFetchJsonWithMeta<USNIFleetReport>(
-      USNI_CACHE_KEY, USNI_CACHE_TTL, fetchUSNIReport,
-    );
+    const report = (await getCachedJson(USNI_CACHE_KEY)) as USNIFleetReport | null;
     if (report) {
-      return { report, cached: source === 'cache', stale: false, error: '' };
+      return { report, cached: true, stale: false, error: '' };
     }
-
-    return { report: undefined, cached: false, stale: false, error: 'No USNI fleet tracker articles found' };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn('[USNI Fleet] Error:', message);
 
     const stale = (await getCachedJson(USNI_STALE_CACHE_KEY)) as USNIFleetReport | null;
     if (stale) {
-      console.warn('[USNI Fleet] Returning stale cached data');
       return { report: stale, cached: true, stale: true, error: 'Using cached data' };
     }
 
+    return { report: undefined, cached: false, stale: false, error: 'No USNI fleet data in cache (waiting for seed)' };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[USNI Fleet] Error:', message);
     return { report: undefined, cached: false, stale: false, error: message };
   }
 }

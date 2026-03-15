@@ -59,6 +59,8 @@ message TransitSummary {
   string risk_level = 7;
   int32 incident_count_7d = 8;
   double disruption_pct = 9;
+  string risk_summary = 10;
+  string risk_report_action = 11;
 }
 
 message MineralProducer {

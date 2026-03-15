@@ -328,9 +328,9 @@ export function computeCIIScores(
   }
 
   // --- OREF (IL only) ---
-  if (aux.orefData && data['IL']) {
-    data['IL'].orefAlertCount = aux.orefData.activeAlertCount;
-    data['IL'].orefHistoryCount24h = aux.orefData.historyCount24h;
+  if (aux.orefData && data.IL) {
+    data.IL.orefAlertCount = aux.orefData.activeAlertCount;
+    data.IL.orefHistoryCount24h = aux.orefData.historyCount24h;
   }
 
   // --- Scoring ---

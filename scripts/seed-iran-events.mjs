@@ -180,12 +180,12 @@ function categorizeSeverity(title) {
 function parseRelativeTime(timeStr) {
   const now = Date.now();
   const match = timeStr.match(/(\d+)\s+hours?\s+ago/);
-  if (match) return now - parseInt(match[1]) * 3600_000;
+  if (match) return now - parseInt(match[1], 10) * 3600_000;
   const minMatch = timeStr.match(/(\d+)\s+min/);
-  if (minMatch) return now - parseInt(minMatch[1]) * 60_000;
+  if (minMatch) return now - parseInt(minMatch[1], 10) * 60_000;
   if (/a day ago/.test(timeStr)) return now - 86400_000;
   const dayMatch = timeStr.match(/(\d+)\s+days?\s+ago/);
-  if (dayMatch) return now - parseInt(dayMatch[1]) * 86400_000;
+  if (dayMatch) return now - parseInt(dayMatch[1], 10) * 86400_000;
   return now;
 }
 

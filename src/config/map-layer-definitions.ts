@@ -1,4 +1,5 @@
 import type { MapLayers } from '@/types';
+// boundary-ignore: isDesktopRuntime is a pure env probe with no service dependencies
 import { isDesktopRuntime } from '@/services/runtime';
 
 export type MapRenderer = 'flat' | 'globe';

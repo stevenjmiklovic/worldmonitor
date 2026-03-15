@@ -64,7 +64,7 @@ async function fetchFredSeries(req: GetFredSeriesRequest): Promise<FredSeries | 
     const observations: FredObservation[] = (obsData.observations || [])
       .map((obs) => {
         const value = parseFloat(obs.value);
-        if (isNaN(value) || obs.value === '.') return null;
+        if (Number.isNaN(value) || obs.value === '.') return null;
         return { date: obs.date, value };
       })
       .filter((o): o is FredObservation => o !== null)

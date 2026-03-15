@@ -149,7 +149,7 @@ import {
   shouldRefreshDailyBrief,
 } from '@/services/daily-market-brief';
 import { fetchCachedRiskScores } from '@/services/cached-risk-scores';
-import type { ThreatLevel as ClientThreatLevel } from '@/services/threat-classifier';
+import type { ThreatLevel as ClientThreatLevel } from '@/types';
 import type { NewsItem as ProtoNewsItem, ThreatLevel as ProtoThreatLevel } from '@/generated/client/worldmonitor/news/v1/service_client';
 
 const PROTO_TO_CLIENT_LEVEL: Record<ProtoThreatLevel, ClientThreatLevel> = {
@@ -371,6 +371,9 @@ export class DataLoaderManager implements AppModule {
       }
       if (shouldLoad('polymarket')) {
         tasks.push({ name: 'predictions', task: runGuarded('predictions', () => this.loadPredictions()) });
+      }
+      if (shouldLoad('forecast')) {
+        tasks.push({ name: 'forecasts', task: runGuarded('forecasts', () => this.loadForecasts()) });
       }
       tasks.push({ name: 'pizzint', task: runGuarded('pizzint', () => this.loadPizzInt()) });
       if (shouldLoad('economic')) {
@@ -1358,6 +1361,14 @@ export class DataLoaderManager implements AppModule {
       dataFreshness.recordError('polymarket', String(error));
       dataFreshness.recordError('predictions', String(error));
     }
+  }
+
+  async loadForecasts(): Promise<void> {
+    try {
+      const { fetchForecasts } = await import('@/services/forecast');
+      const forecasts = await fetchForecasts();
+      this.callPanel('forecast', 'updateForecasts', forecasts);
+    } catch { /* premium feature, silent fail */ }
   }
 
   async loadNatural(): Promise<void> {

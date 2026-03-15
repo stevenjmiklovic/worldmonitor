@@ -1,6 +1,6 @@
-import type { PanelConfig, MapLayers } from '@/types';
-import type { DataSourceId } from '@/services/data-freshness';
+import type { PanelConfig, MapLayers, DataSourceId } from '@/types';
 import { SITE_VARIANT } from './variant';
+// boundary-ignore: isDesktopRuntime is a pure env probe with no service dependencies
 import { isDesktopRuntime } from '@/services/runtime';
 
 const _desktop = isDesktopRuntime();
@@ -17,6 +17,7 @@ const FULL_PANELS: Record<string, PanelConfig> = {
   'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Insights', enabled: true, priority: 1 },
   'strategic-posture': { name: 'AI Strategic Posture', enabled: true, priority: 1 },
+  forecast: { name: 'AI Forecasts', enabled: true, priority: 1, ...(_desktop && { premium: 'locked' as const }) }, // trial: unlocked on web, locked on desktop
   cii: { name: 'Country Instability', enabled: true, priority: 1, ...(_desktop && { premium: 'enhanced' as const }) },
   'strategic-risk': { name: 'Strategic Risk Overview', enabled: true, priority: 1, ...(_desktop && { premium: 'enhanced' as const }) },
   intel: { name: 'Intel Feed', enabled: true, priority: 1 },
@@ -68,13 +69,13 @@ const FULL_PANELS: Record<string, PanelConfig> = {
 };
 
 const FULL_MAP_LAYERS: MapLayers = {
-  iranAttacks: _desktop ? false : true,
+  iranAttacks: !_desktop,
   gpsJamming: false,
   satellites: false,
 
 
   conflicts: true,
-  bases: _desktop ? false : true,
+  bases: !_desktop,
   cables: false,
   pipelines: false,
   hotspots: true,
@@ -999,7 +1000,7 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
   // Full (geopolitical) variant
   intelligence: {
     labelKey: 'header.panelCatIntelligence',
-    panelKeys: ['cii', 'strategic-risk', 'intel', 'gdelt-intel', 'cascade', 'telegram-intel'],
+    panelKeys: ['cii', 'strategic-risk', 'intel', 'gdelt-intel', 'cascade', 'telegram-intel', 'forecast'],
     variants: ['full'],
   },
   correlation: {

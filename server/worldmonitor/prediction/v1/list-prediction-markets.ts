@@ -8,6 +8,7 @@
  */
 
 import {
+  type MarketSource,
   type PredictionServiceHandler,
   type ServerContext,
   type ListPredictionMarketsRequest,
@@ -113,7 +114,7 @@ function parseYesPrice(market: GammaMarket): number {
       const prices: string[] = JSON.parse(pricesStr);
       if (prices.length >= 1) {
         const parsed = parseFloat(prices[0]!);
-        if (!isNaN(parsed)) return parsed; // 0-1 scale for proto
+        if (!Number.isNaN(parsed)) return parsed; // 0-1 scale for proto
       }
     }
   } catch {
@@ -136,7 +137,7 @@ function mapEvent(event: GammaEvent, category: string): PredictionMarket {
     url: `https://polymarket.com/event/${event.slug}`,
     closesAt: Number.isFinite(closesAtMs) ? closesAtMs : 0,
     category: category || '',
-    source: 'MARKET_SOURCE_POLYMARKET',
+    source: 'MARKET_SOURCE_POLYMARKET' as MarketSource,
 
   };
 }
@@ -152,8 +153,7 @@ function mapMarket(market: GammaMarket): PredictionMarket {
     url: `https://polymarket.com/market/${market.slug}`,
     closesAt: Number.isFinite(closesAtMs) ? closesAtMs : 0,
     category: '',
-    source: 'MARKET_SOURCE_POLYMARKET',
-
+    source: 'MARKET_SOURCE_POLYMARKET' as MarketSource,
   };
 }
 
@@ -169,7 +169,7 @@ function mapKalshiMarket(market: KalshiMarket, category: string, eventTitle?: st
     url: `https://kalshi.com/markets/${market.ticker}`,
     closesAt: Number.isFinite(closesAtMs) ? closesAtMs : 0,
     category: category || '',
-    source: 'MARKET_SOURCE_KALSHI',
+    source: 'MARKET_SOURCE_KALSHI' as MarketSource,
   };
 }
 
@@ -248,7 +248,7 @@ export const listPredictionMarkets: PredictionServiceHandler['listPredictionMark
               url: m.url || '',
               closesAt: m.endDate ? Date.parse(m.endDate) : 0,
               category: category || '',
-              source: m.source === 'kalshi' ? 'MARKET_SOURCE_KALSHI' : 'MARKET_SOURCE_POLYMARKET',
+              source: m.source === 'kalshi' ? 'MARKET_SOURCE_KALSHI' as MarketSource : 'MARKET_SOURCE_POLYMARKET' as MarketSource,
           
             }));
             return { markets, pagination: undefined };

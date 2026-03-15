@@ -1,5 +1,4 @@
 import { PredictionServiceClient } from '@/generated/client/worldmonitor/prediction/v1/service_client';
-import type { MarketSource } from '@/generated/client/worldmonitor/prediction/v1/service_client';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { createCircuitBreaker } from '@/utils';
 import { SITE_VARIANT } from '@/config';
@@ -61,7 +60,7 @@ function protoToMarket(m: { title: string; yesPrice: number; volume: number; url
     volume: m.volume,
     url: m.url || undefined,
     endDate: m.closesAt ? new Date(m.closesAt).toISOString() : undefined,
-    source: (m.source as MarketSource) === 'MARKET_SOURCE_KALSHI' ? 'kalshi' : 'polymarket',
+    source: m.source === 'MARKET_SOURCE_KALSHI' ? 'kalshi' : 'polymarket',
     regions: tagRegions(m.title),
   };
 }
@@ -69,7 +68,7 @@ function protoToMarket(m: { title: string; yesPrice: number; volume: number; url
 export async function fetchPredictions(opts?: { region?: string }): Promise<PredictionMarket[]> {
   const markets = await breaker.execute(async () => {
     const hydrated = getHydratedData('predictions') as BootstrapPredictionData | undefined;
-    if (hydrated && hydrated.fetchedAt && Date.now() - hydrated.fetchedAt < 20 * 60 * 1000) {
+    if (hydrated?.fetchedAt && Date.now() - hydrated.fetchedAt < 20 * 60 * 1000) {
       const variant = SITE_VARIANT === 'tech' ? hydrated.tech
         : SITE_VARIANT === 'finance' ? (hydrated.finance ?? hydrated.geopolitical)
         : hydrated.geopolitical;

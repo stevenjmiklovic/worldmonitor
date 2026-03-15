@@ -26,7 +26,7 @@ export { hashString };
 // Headline deduplication (used by SummarizeArticle)
 // ========================================================================
 
-// @ts-ignore -- plain JS module, no .d.mts needed for this pure function
+// @ts-expect-error -- plain JS module, no .d.mts needed for this pure function
 export { deduplicateHeadlines } from './dedup.mjs';
 
 // ========================================================================
@@ -140,7 +140,7 @@ export function getProviderCredentials(provider: string): ProviderCredentials | 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const apiKey = process.env.OLLAMA_API_KEY;
     if (apiKey) {
-      headers['Authorization'] = `Bearer ${apiKey}`;
+      headers.Authorization = `Bearer ${apiKey}`;
     }
     const rawMax = parseInt(process.env.OLLAMA_MAX_TOKENS || '300', 10);
     const ollamaMaxTokens = Number.isFinite(rawMax) ? Math.min(Math.max(rawMax, 50), 2000) : 300;

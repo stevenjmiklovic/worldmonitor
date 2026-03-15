@@ -170,7 +170,7 @@ export async function withRetry(fn, maxRetries = 3, delayMs = 1000) {
     } catch (err) {
       lastErr = err;
       if (attempt < maxRetries) {
-        const wait = delayMs * Math.pow(2, attempt);
+        const wait = delayMs * 2 ** attempt;
         console.warn(`  Retry ${attempt + 1}/${maxRetries} in ${wait}ms: ${err.message || err}`);
         await new Promise(r => setTimeout(r, wait));
       }
@@ -205,8 +205,45 @@ export async function writeExtraKey(key, data, ttl) {
     body: JSON.stringify(['SET', key, payload, 'EX', ttl]),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!resp.ok) console.warn(`  Extra key ${key}: write failed (HTTP ${resp.status})`);
-  else console.log(`  Extra key ${key}: written`);
+  if (!resp.ok) throw new Error(`Extra key ${key}: write failed (HTTP ${resp.status})`);
+  console.log(`  Extra key ${key}: written`);
+}
+
+export async function writeExtraKeyWithMeta(key, data, ttl, recordCount, metaKeyOverride) {
+  await writeExtraKey(key, data, ttl);
+  const { url, token } = getRedisCredentials();
+  const metaKey = metaKeyOverride || `seed-meta:${key.replace(/:v\d+$/, '')}`;
+  const meta = { fetchedAt: Date.now(), recordCount: recordCount ?? 0 };
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(['SET', metaKey, JSON.stringify(meta), 'EX', 86400 * 7]),
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!resp.ok) console.warn(`  seed-meta ${metaKey}: write failed`);
+}
+
+export async function extendExistingTtl(keys, ttlSeconds = 600) {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) {
+    console.error('  Cannot extend TTL: missing Redis credentials');
+    return;
+  }
+  try {
+    const pipeline = keys.map(k => ['EXPIRE', k, ttlSeconds]);
+    const resp = await fetch(`${url}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(pipeline),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (resp.ok) {
+      console.log(`  Extended TTL on ${keys.length} existing key(s) (${ttlSeconds}s)`);
+    }
+  } catch (e) {
+    console.error(`  TTL extension failed: ${e.message}`);
+  }
 }
 
 export function sleep(ms) {
@@ -243,8 +280,26 @@ export async function runSeed(domain, resource, canonicalKey, fetchFn, opts = {}
     process.exit(0);
   }
 
+  // Phase 1: Fetch data (graceful on failure — extend TTL on stale data)
+  let data;
   try {
-    const data = await withRetry(fetchFn);
+    data = await withRetry(fetchFn);
+  } catch (err) {
+    await releaseLock(`${domain}:${resource}`, runId);
+    const durationMs = Date.now() - startMs;
+    console.error(`  FETCH FAILED: ${err.message || err}`);
+
+    const ttl = ttlSeconds || 600;
+    const keys = [canonicalKey];
+    if (extraKeys) keys.push(...extraKeys.map(ek => ek.key));
+    await extendExistingTtl(keys, ttl);
+
+    console.log(`\n=== Failed gracefully (${Math.round(durationMs)}ms) ===`);
+    process.exit(0);
+  }
+
+  // Phase 2: Publish to Redis (rethrow on failure — data was fetched but not stored)
+  try {
     const publishResult = await atomicPublish(canonicalKey, data, validateFn, ttlSeconds);
     if (publishResult.skipped) {
       const durationMs = Date.now() - startMs;

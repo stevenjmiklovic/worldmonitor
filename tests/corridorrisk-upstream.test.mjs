@@ -26,16 +26,12 @@ describe('CorridorRisk type exports', () => {
 });
 
 describe('CorridorRisk relay seed loop', () => {
-  it('reads CORRIDOR_RISK_API_KEY from env', () => {
-    assert.match(relaySrc, /CORRIDOR_RISK_API_KEY.*process\.env\.CORRIDOR_RISK_API_KEY/);
+  it('uses corridorrisk.io open beta API (no auth required)', () => {
+    assert.match(relaySrc, /corridorrisk\.io\/api\/corridors/);
   });
 
-  it('uses corridorrisk.io API', () => {
-    assert.match(relaySrc, /api\.corridorrisk\.io/);
-  });
-
-  it('uses Bearer token authentication', () => {
-    assert.match(relaySrc, /Authorization.*Bearer.*CORRIDOR_RISK_API_KEY/);
+  it('does not require API key (open beta)', () => {
+    assert.doesNotMatch(relaySrc, /CORRIDOR_RISK_API_KEY/);
   });
 
   it('writes to supply_chain:corridorrisk:v1 Redis key', () => {
@@ -50,15 +46,29 @@ describe('CorridorRisk relay seed loop', () => {
     assert.match(relaySrc, /function startCorridorRiskSeedLoop/);
   });
 
-  it('skips when API key is not configured', () => {
-    assert.match(relaySrc, /if\s*\(\s*!CORRIDOR_RISK_API_KEY\s*\)\s*return/);
-  });
-
-  it('uses 10s timeout', () => {
-    assert.match(relaySrc, /AbortSignal\.timeout\(10000\)/);
+  it('uses 15s timeout', () => {
+    assert.match(relaySrc, /AbortSignal\.timeout\(15000\)/);
   });
 
   it('logs only status code on HTTP error', () => {
     assert.match(relaySrc, /\[CorridorRisk\] HTTP \$\{resp\.status\}/);
+  });
+
+  it('derives riskLevel from score (not from API field)', () => {
+    assert.match(relaySrc, /score >= 70.*critical/);
+    assert.match(relaySrc, /score >= 50.*high/);
+    assert.match(relaySrc, /score >= 30.*elevated/);
+  });
+
+  it('stores riskSummary truncated to 200 chars', () => {
+    assert.match(relaySrc, /risk_summary.*\.slice\(0,\s*200\)/);
+  });
+
+  it('stores riskReportAction truncated to 500 chars', () => {
+    assert.match(relaySrc, /risk_report\?\.action.*\.slice\(0,\s*500\)/);
+  });
+
+  it('triggers seedTransitSummaries after successful seed', () => {
+    assert.match(relaySrc, /seedTransitSummaries\(\).*Post-CorridorRisk/);
   });
 });

@@ -31,7 +31,7 @@ function toDataPoint(row: any, reporter: string, partner: string): TariffDataPoi
   if (!row) return null;
   const year = parseInt(row.Year ?? row.year ?? row.Period ?? '', 10);
   const tariffRate = parseFloat(row.Value ?? row.value ?? '');
-  if (isNaN(year) || isNaN(tariffRate)) return null;
+  if (Number.isNaN(year) || Number.isNaN(tariffRate)) return null;
 
   return {
     reportingCountry:

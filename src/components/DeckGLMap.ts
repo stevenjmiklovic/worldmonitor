@@ -1930,7 +1930,7 @@ export class DeckGLMap {
       id: 'earthquakes-layer',
       data: earthquakes,
       getPosition: (d) => [d.location?.longitude ?? 0, d.location?.latitude ?? 0],
-      getRadius: (d) => Math.pow(2, d.magnitude) * 1000,
+      getRadius: (d) => 2 ** d.magnitude * 1000,
       getFillColor: (d) => {
         const mag = d.magnitude;
         if (mag >= 6) return [255, 0, 0, 200] as [number, number, number, number];
@@ -3817,7 +3817,7 @@ export class DeckGLMap {
   // Utility methods
   private hexToRgba(hex: string, alpha: number): [number, number, number, number] {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (result && result[1] && result[2] && result[3]) {
+    if (result?.[1] && result[2] && result[3]) {
       return [
         parseInt(result[1], 16),
         parseInt(result[2], 16),
@@ -4707,7 +4707,7 @@ export class DeckGLMap {
     if (Math.abs(zoom - this.lastAircraftFetchZoom) >= 1) return true;
     const [prevLng, prevLat] = this.lastAircraftFetchCenter;
     // Threshold scales with zoom — higher zoom = smaller movement triggers fetch
-    const threshold = Math.max(0.1, 2 / Math.pow(2, Math.max(0, zoom - 3)));
+    const threshold = Math.max(0.1, 2 / 2 ** Math.max(0, zoom - 3));
     return Math.abs(center.lat - prevLat) > threshold || Math.abs(center.lng - prevLng) > threshold;
   }
 

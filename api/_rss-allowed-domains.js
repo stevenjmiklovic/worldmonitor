@@ -126,7 +126,7 @@ export default [
   "de.euronews.com",
   "es.euronews.com",
   "fr.euronews.com",
-  "gr.euronews.com"
+  "gr.euronews.com",
   "it.euronews.com",
   "pt.euronews.com",
   "ru.euronews.com",

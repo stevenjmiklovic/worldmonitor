@@ -29,7 +29,7 @@ const MAJOR_REPORTERS = ['840', '156', '276', '392', '826', '356', '076', '643',
 function toRestriction(row: any): TradeRestriction | null {
   if (!row) return null;
   const value = parseFloat(row.Value ?? row.value ?? '');
-  if (isNaN(value)) return null;
+  if (Number.isNaN(value)) return null;
 
   const reporterCode = String(row.ReportingEconomyCode ?? row.reportingEconomyCode ?? '');
   const year = String(row.Year ?? row.year ?? row.Period ?? '');

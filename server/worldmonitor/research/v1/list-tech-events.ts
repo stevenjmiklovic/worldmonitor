@@ -265,7 +265,7 @@ function parseDevEventsRSS(rssText: string): TechEvent[] {
     let startDate: string | null = null;
     if (dateMatch) {
       const parsed = new Date(dateMatch[1]!);
-      if (!isNaN(parsed.getTime())) {
+      if (!Number.isNaN(parsed.getTime())) {
         startDate = parsed.toISOString().split('T')[0]!;
       }
     }

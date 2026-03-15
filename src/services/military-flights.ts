@@ -342,7 +342,7 @@ function clusterFlights(flights: MilitaryFlight[]): MilitaryFlightCluster[] {
   for (const hotspot of MILITARY_HOTSPOTS) {
     const nearbyFlights = flights.filter((f) => {
       if (processed.has(f.id)) return false;
-      const distance = Math.sqrt(Math.pow(f.lat - hotspot.lat, 2) + Math.pow(f.lon - hotspot.lon, 2));
+      const distance = Math.sqrt((f.lat - hotspot.lat) ** 2 + (f.lon - hotspot.lon) ** 2);
       return distance <= hotspot.radius;
     });
 

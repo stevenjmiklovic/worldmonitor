@@ -5,8 +5,9 @@ import { loadEnvFile, CHROME_UA, runSeed, sleep } from './_seed-utils.mjs';
 loadEnvFile(import.meta.url);
 
 const CANONICAL_KEY = 'intelligence:gdelt-intel:v1';
-const CACHE_TTL = 3600;
+const CACHE_TTL = 7200; // 2h — aligns with health.js maxStaleMin:120
 const GDELT_DOC_API = 'https://api.gdeltproject.org/api/v2/doc/doc';
+const INTER_TOPIC_DELAY_MS = 20_000; // 20s between topics to avoid 429
 
 const INTEL_TOPICS = [
   { id: 'military',     query: '(military exercise OR troop deployment OR airstrike OR "naval exercise") sourcelang:eng' },
@@ -72,8 +73,13 @@ async function fetchWithRetry(topic, maxRetries = 3) {
       return await fetchTopicArticles(topic);
     } catch (err) {
       const is429 = err.message?.includes('429');
-      if (!is429 || attempt === maxRetries) throw err;
-      const backoff = (attempt + 1) * 10_000;
+      if (!is429 || attempt === maxRetries) {
+        // Non-429 error or exhausted retries: return empty rather than killing the whole seed
+        console.warn(`    ${topic.id}: giving up after ${attempt + 1} attempts (${err.message})`);
+        return { id: topic.id, articles: [], fetchedAt: new Date().toISOString() };
+      }
+      // Start backoff at 20s (GDELT needs longer cooldown than 10s)
+      const backoff = 20_000 + attempt * 15_000;
       console.log(`    429 rate-limited, waiting ${backoff / 1000}s...`);
       await sleep(backoff);
     }
@@ -83,7 +89,7 @@ async function fetchWithRetry(topic, maxRetries = 3) {
 async function fetchAllTopics() {
   const topics = [];
   for (let i = 0; i < INTEL_TOPICS.length; i++) {
-    if (i > 0) await sleep(12_000);
+    if (i > 0) await sleep(INTER_TOPIC_DELAY_MS);
     console.log(`  Fetching ${INTEL_TOPICS[i].id}...`);
     const result = await fetchWithRetry(INTEL_TOPICS[i]);
     console.log(`    ${result.articles.length} articles`);
@@ -93,9 +99,9 @@ async function fetchAllTopics() {
 }
 
 function validate(data) {
-  if (!Array.isArray(data?.topics) || data.topics.length !== INTEL_TOPICS.length) return false;
+  if (!Array.isArray(data?.topics) || data.topics.length === 0) return false;
   const populated = data.topics.filter((t) => Array.isArray(t.articles) && t.articles.length > 0);
-  return populated.length >= 3;
+  return populated.length >= 3; // at least 3 of 6 topics must have articles
 }
 
 runSeed('intelligence', 'gdelt-intel', CANONICAL_KEY, fetchAllTopics, {

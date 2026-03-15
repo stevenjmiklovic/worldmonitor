@@ -58,7 +58,7 @@ async function fetchSpending() {
     recipientName: String(r['Recipient Name'] || 'Unknown'),
     amount: Number(r['Award Amount']) || 0,
     agency: String(r['Awarding Agency'] || 'Unknown'),
-    description: String(r['Description'] || '').slice(0, 200),
+    description: String(r.Description || '').slice(0, 200),
     startDate: String(r['Start Date'] || ''),
     awardType: AWARD_TYPE_MAP[String(r['Award Type'] || '')] || 'other',
   }));

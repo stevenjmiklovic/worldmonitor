@@ -238,7 +238,7 @@ export function formatArticleDate(dateStr: string): string {
     const min = dateStr.slice(11, 13);
     const sec = dateStr.slice(13, 15);
     const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
-    if (isNaN(date.getTime())) return '';
+    if (Number.isNaN(date.getTime())) return '';
 
     const now = Date.now();
     const diff = now - date.getTime();

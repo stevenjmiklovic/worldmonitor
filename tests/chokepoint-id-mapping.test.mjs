@@ -69,6 +69,36 @@ describe('portwatchNameToId', () => {
   });
 });
 
+import { readFileSync } from 'node:fs';
+const relaySrc = readFileSync('scripts/ais-relay.cjs', 'utf8');
+const handlerSrc = readFileSync('server/worldmonitor/supply-chain/v1/get-chokepoint-status.ts', 'utf8');
+
+describe('relay CHOKEPOINT_THREAT_LEVELS sync', () => {
+
+  it('relay has a threat level entry for every canonical chokepoint', () => {
+    for (const cp of CANONICAL_CHOKEPOINTS) {
+      assert.match(relaySrc, new RegExp(`${cp.id}:\\s*'`), `Missing relay threat level for ${cp.id}`);
+    }
+  });
+
+  it('relay threat levels match handler CHOKEPOINTS config', () => {
+    const relayBlock = relaySrc.match(/CHOKEPOINT_THREAT_LEVELS\s*=\s*\{([^}]+)\}/)?.[1] || '';
+    for (const cp of CANONICAL_CHOKEPOINTS) {
+      const relayMatch = relayBlock.match(new RegExp(`${cp.id}:\\s*'(\\w+)'`));
+      const handlerMatch = handlerSrc.match(new RegExp(`id:\\s*'${cp.id}'[^}]*threatLevel:\\s*'(\\w+)'`));
+      if (relayMatch && handlerMatch) {
+        assert.equal(relayMatch[1], handlerMatch[1], `Threat level mismatch for ${cp.id}: relay=${relayMatch[1]} handler=${handlerMatch[1]}`);
+      }
+    }
+  });
+
+  it('relay RELAY_NAME_TO_ID covers all canonical chokepoints', () => {
+    for (const cp of CANONICAL_CHOKEPOINTS) {
+      assert.match(relaySrc, new RegExp(`'${cp.relayName}':\\s*'${cp.id}'`), `Missing relay name mapping for ${cp.relayName} -> ${cp.id}`);
+    }
+  });
+});
+
 describe('corridorRiskNameToId', () => {
   it('maps "Hormuz" to hormuz_strait', () => {
     assert.equal(corridorRiskNameToId('Hormuz'), 'hormuz_strait');

@@ -78,7 +78,7 @@ async function fetchCapacityForSource(
   for (const row of rows) {
     if (row.period == null || row.capability == null) continue;
     const year = parseInt(row.period, 10);
-    if (isNaN(year)) continue;
+    if (Number.isNaN(year)) continue;
     const mw = typeof row.capability === 'number' ? row.capability : parseFloat(String(row.capability));
     if (!Number.isFinite(mw)) continue;
     yearTotals.set(year, (yearTotals.get(year) ?? 0) + mw);

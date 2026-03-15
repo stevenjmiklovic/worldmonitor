@@ -101,7 +101,7 @@ export class CorrelationPanel extends Panel {
       : card.score >= 30 ? SCORE_COLORS.medium
       : SCORE_COLORS.low;
 
-    const trend = TREND_ICONS[card.trend] ?? TREND_ICONS['stable']!;
+    const trend = TREND_ICONS[card.trend] ?? TREND_ICONS.stable!;
     const isExpanded = this.expandedCard === card.id;
 
     const header = h('div', {

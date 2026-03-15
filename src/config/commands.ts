@@ -1,5 +1,6 @@
 import type { MapLayers } from '@/types';
 import { CURATED_COUNTRIES } from '@/config/countries';
+// boundary-ignore: commands are built lazily at runtime via getAllCommands()
 import { getCurrentLanguage, t } from '@/services/i18n';
 import { toFlagEmoji } from '@/utils/country-flag';
 

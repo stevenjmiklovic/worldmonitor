@@ -1,0 +1,1374 @@
+#!/usr/bin/env node
+
+import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { loadEnvFile, runSeed, CHROME_UA } from './_seed-utils.mjs';
+import { tagRegions } from './_prediction-scoring.mjs';
+
+const _isDirectRun = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+if (_isDirectRun) loadEnvFile(import.meta.url);
+
+const CANONICAL_KEY = 'forecast:predictions:v1';
+const PRIOR_KEY = 'forecast:predictions:prior:v1';
+const TTL_SECONDS = 3600;
+
+const THEATER_IDS = [
+  'iran-theater', 'taiwan-theater', 'baltic-theater',
+  'blacksea-theater', 'korea-theater', 'south-china-sea',
+  'east-med-theater', 'israel-gaza-theater', 'yemen-redsea-theater',
+];
+
+const THEATER_REGIONS = {
+  'iran-theater': 'Middle East',
+  'taiwan-theater': 'Western Pacific',
+  'baltic-theater': 'Northern Europe',
+  'blacksea-theater': 'Black Sea',
+  'korea-theater': 'Korean Peninsula',
+  'south-china-sea': 'South China Sea',
+  'east-med-theater': 'Eastern Mediterranean',
+  'israel-gaza-theater': 'Israel/Gaza',
+  'yemen-redsea-theater': 'Red Sea',
+};
+
+const CHOKEPOINT_COMMODITIES = {
+  'Middle East': { commodity: 'Oil', sensitivity: 0.8 },
+  'Red Sea': { commodity: 'Shipping/Oil', sensitivity: 0.7 },
+  'Israel/Gaza': { commodity: 'Gas/Oil', sensitivity: 0.5 },
+  'Eastern Mediterranean': { commodity: 'Gas', sensitivity: 0.4 },
+  'Western Pacific': { commodity: 'Semiconductors', sensitivity: 0.9 },
+  'South China Sea': { commodity: 'Trade goods', sensitivity: 0.6 },
+  'Black Sea': { commodity: 'Grain/Energy', sensitivity: 0.7 },
+};
+
+const REGION_KEYWORDS = {
+  'Middle East': ['mena'],
+  'Red Sea': ['mena'],
+  'Israel/Gaza': ['mena'],
+  'Eastern Mediterranean': ['mena', 'eu'],
+  'Western Pacific': ['asia'],
+  'South China Sea': ['asia'],
+  'Black Sea': ['eu'],
+  'Korean Peninsula': ['asia'],
+  'Northern Europe': ['eu'],
+};
+
+function getRedisCredentials() {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) throw new Error('Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN');
+  return { url, token };
+}
+
+async function redisGet(url, token, key) {
+  const resp = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (!data?.result) return null;
+  try { return JSON.parse(data.result); } catch { return null; }
+}
+
+// ── Phase 4: Input normalizers ──────────────────────────────
+function normalizeChokepoints(raw) {
+  if (!raw?.chokepoints && !raw?.corridors) return raw;
+  const items = raw.chokepoints || raw.corridors || [];
+  return {
+    ...raw,
+    chokepoints: items.map(cp => ({
+      ...cp,
+      region: cp.name || cp.region || '',
+      riskScore: cp.disruptionScore ?? cp.riskScore ?? 0,
+      riskLevel: cp.status === 'red' ? 'critical' : cp.status === 'yellow' ? 'high' : cp.riskLevel || 'normal',
+      disrupted: cp.status === 'red' || cp.disrupted || false,
+    })),
+  };
+}
+
+function normalizeGpsJamming(raw) {
+  if (!raw) return raw;
+  if (raw.hexes && !raw.zones) return { ...raw, zones: raw.hexes };
+  return raw;
+}
+
+async function warmPingChokepoints() {
+  const baseUrl = process.env.WM_API_BASE_URL;
+  if (!baseUrl) { console.log('  [Chokepoints] Warm-ping skipped (no WM_API_BASE_URL)'); return; }
+  try {
+    const resp = await fetch(`${baseUrl}/api/supply-chain/v1/get-chokepoint-status`, {
+      headers: { 'User-Agent': CHROME_UA, Origin: 'https://worldmonitor.app' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) console.warn(`  [Chokepoints] Warm-ping failed: HTTP ${resp.status}`);
+    else console.log('  [Chokepoints] Warm-ping OK');
+  } catch (err) { console.warn(`  [Chokepoints] Warm-ping error: ${err.message}`); }
+}
+
+async function readInputKeys() {
+  const { url, token } = getRedisCredentials();
+  const keys = [
+    'risk:scores:sebuf:stale:v1',
+    'temporal:anomalies:v1',
+    'theater-posture:sebuf:stale:v1',
+    'prediction:markets-bootstrap:v1',
+    'supply_chain:chokepoints:v4',
+    'conflict:iran-events:v1',
+    'conflict:ucdp-events:v1',
+    'unrest:events:v1',
+    'infra:outages:v1',
+    'cyber:threats-bootstrap:v2',
+    'intelligence:gpsjam:v2',
+    'news:insights:v1',
+    'news:digest:v1:full:en',
+  ];
+  const pipeline = keys.map(k => ['GET', k]);
+  const resp = await fetch(`${url}/pipeline`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(pipeline),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!resp.ok) throw new Error(`Redis pipeline failed: ${resp.status}`);
+  const results = await resp.json();
+
+  const parse = (i) => {
+    try { return results[i]?.result ? JSON.parse(results[i].result) : null; } catch { return null; }
+  };
+
+  return {
+    ciiScores: parse(0),
+    temporalAnomalies: parse(1),
+    theaterPosture: parse(2),
+    predictionMarkets: parse(3),
+    chokepoints: normalizeChokepoints(parse(4)),
+    iranEvents: parse(5),
+    ucdpEvents: parse(6),
+    unrestEvents: parse(7),
+    outages: parse(8),
+    cyberThreats: parse(9),
+    gpsJamming: normalizeGpsJamming(parse(10)),
+    newsInsights: parse(11),
+    newsDigest: parse(12),
+  };
+}
+
+function forecastId(domain, region, title) {
+  const hash = crypto.createHash('sha256')
+    .update(`${domain}:${region}:${title}`)
+    .digest('hex').slice(0, 8);
+  return `fc-${domain}-${hash}`;
+}
+
+function normalize(value, min, max) {
+  if (max <= min) return 0;
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+function resolveCountryName(raw) {
+  if (!raw || raw.length > 3) return raw; // already a full name or long-form
+  const codes = loadCountryCodes();
+  return codes[raw]?.name || raw;
+}
+
+function makePrediction(domain, region, title, probability, confidence, timeHorizon, signals) {
+  const now = Date.now();
+  return {
+    id: forecastId(domain, region, title),
+    domain,
+    region,
+    title,
+    scenario: '',
+    probability: Math.round(Math.max(0, Math.min(1, probability)) * 1000) / 1000,
+    confidence: Math.round(Math.max(0, Math.min(1, confidence)) * 1000) / 1000,
+    timeHorizon,
+    signals,
+    cascades: [],
+    trend: 'stable',
+    priorProbability: 0,
+    calibration: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+// Normalize CII data from sebuf proto format (server-side) to uniform shape.
+// Server writes: { ciiScores: [{ region, combinedScore, trend: 'TREND_DIRECTION_RISING', components: {...} }] }
+// Frontend computes: [{ code, name, score, level, trend: 'rising', components: { unrest, conflict, ... } }]
+function normalizeCiiEntry(c) {
+  const score = c.combinedScore ?? c.score ?? c.dynamicScore ?? 0;
+  const code = c.region || c.code || '';
+  const rawTrend = (c.trend || '').toLowerCase();
+  const trend = rawTrend.includes('rising') ? 'rising'
+    : rawTrend.includes('falling') ? 'falling'
+    : 'stable';
+  const level = score >= 81 ? 'critical' : score >= 66 ? 'high' : score >= 51 ? 'elevated' : score >= 31 ? 'normal' : 'low';
+  const unrest = c.components?.unrest ?? c.components?.protest ?? c.components?.ciiContribution ?? c.components?.geoConvergence ?? 0;
+  // Resolve ISO code to full country name (prevents substring false positives: IL matching Chile)
+  let name = c.name || '';
+  if (!name && code) {
+    const codes = loadCountryCodes();
+    name = codes[code]?.name || code;
+  }
+  return { code, name, score, level, trend, change24h: c.change24h ?? 0, components: { ...c.components, unrest } };
+}
+
+function extractCiiScores(inputs) {
+  const raw = inputs.ciiScores;
+  if (!raw) return [];
+  // sebuf proto: { ciiScores: [...] }, frontend: array or { scores: [...] }
+  const arr = Array.isArray(raw) ? raw : raw.ciiScores || raw.scores || [];
+  return arr.map(normalizeCiiEntry);
+}
+
+function detectConflictScenarios(inputs) {
+  const predictions = [];
+  const scores = extractCiiScores(inputs);
+  const theaters = inputs.theaterPosture?.theaters || [];
+  const iran = Array.isArray(inputs.iranEvents) ? inputs.iranEvents : inputs.iranEvents?.events || [];
+  const ucdp = Array.isArray(inputs.ucdpEvents) ? inputs.ucdpEvents : inputs.ucdpEvents?.events || [];
+
+  for (const c of scores) {
+    if (!c.score || c.score <= 60) continue;
+    if (c.level !== 'high' && c.level !== 'critical') continue;
+
+    const signals = [
+      { type: 'cii', value: `${c.name} CII ${c.score} (${c.level})`, weight: 0.4 },
+    ];
+    let sourceCount = 1;
+
+    if (c.change24h && Math.abs(c.change24h) > 2) {
+      signals.push({ type: 'cii_delta', value: `24h change ${c.change24h > 0 ? '+' : ''}${c.change24h.toFixed(1)}`, weight: 0.2 });
+      sourceCount++;
+    }
+
+    // Use word-boundary regex to prevent substring false positives (IL matching Chile)
+    const countryName = c.name.toLowerCase();
+    const countryCode = c.code.toLowerCase();
+    const matchRegex = new RegExp(`\\b(${countryName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|${countryCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b`, 'i');
+    const matchingIran = iran.filter(e => matchRegex.test(e.country || e.location || ''));
+    if (matchingIran.length > 0) {
+      signals.push({ type: 'conflict_events', value: `${matchingIran.length} Iran-related events`, weight: 0.2 });
+      sourceCount++;
+    }
+
+    const matchingUcdp = ucdp.filter(e => matchRegex.test(e.country || e.location || ''));
+    if (matchingUcdp.length > 0) {
+      signals.push({ type: 'ucdp', value: `${matchingUcdp.length} UCDP events`, weight: 0.2 });
+      sourceCount++;
+    }
+
+    const ciiNorm = normalize(c.score, 50, 100);
+    const eventBoost = (matchingIran.length + matchingUcdp.length) > 0 ? 0.1 : 0;
+    const prob = Math.min(0.9, ciiNorm * 0.6 + eventBoost + (c.trend === 'rising' ? 0.1 : 0));
+    const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
+
+    predictions.push(makePrediction(
+      'conflict', c.name,
+      `Escalation risk: ${c.name}`,
+      prob, confidence, '7d', signals,
+    ));
+  }
+
+  for (const t of theaters) {
+    if (!t?.id) continue;
+    const posture = t.postureLevel || t.posture || '';
+    if (posture !== 'critical' && posture !== 'elevated') continue;
+    const region = THEATER_REGIONS[t.id] || t.name || t.id;
+    const alreadyCovered = predictions.some(p => p.region === region);
+    if (alreadyCovered) continue;
+
+    const signals = [
+      { type: 'theater', value: `${t.name || t.id} posture: ${posture}`, weight: 0.5 },
+    ];
+    const prob = posture === 'critical' ? 0.65 : 0.4;
+
+    predictions.push(makePrediction(
+      'conflict', region,
+      `Theater escalation: ${region}`,
+      prob, 0.5, '7d', signals,
+    ));
+  }
+
+  return predictions;
+}
+
+function detectMarketScenarios(inputs) {
+  const predictions = [];
+  const chokepoints = inputs.chokepoints?.routes || inputs.chokepoints?.chokepoints || [];
+  const scores = extractCiiScores(inputs);
+
+  const affectedRegions = new Set();
+
+  for (const cp of chokepoints) {
+    const risk = cp.riskLevel || cp.risk || '';
+    if (risk !== 'high' && risk !== 'critical' && (cp.riskScore || 0) < 60) continue;
+    const region = cp.region || cp.name || '';
+    if (!region) continue;
+
+    const commodity = CHOKEPOINT_COMMODITIES[region];
+    if (!commodity) continue;
+
+    if (affectedRegions.has(region)) continue;
+    affectedRegions.add(region);
+
+    const riskNorm = normalize(cp.riskScore || (risk === 'critical' ? 85 : 70), 40, 100);
+    const prob = Math.min(0.85, riskNorm * commodity.sensitivity);
+
+    predictions.push(makePrediction(
+      'market', region,
+      `${commodity.commodity} price impact from ${region} disruption`,
+      prob, 0.6, '30d',
+      [{ type: 'chokepoint', value: `${region} risk: ${risk}`, weight: 0.5 },
+       { type: 'commodity', value: `${commodity.commodity} sensitivity: ${commodity.sensitivity}`, weight: 0.3 }],
+    ));
+  }
+
+  // Map high-CII countries to their commodity-sensitive theater via entity graph
+  const graph = loadEntityGraph();
+  for (const c of scores) {
+    if (!c.score || c.score <= 75) continue;
+    // Find theater region: check entity graph links for theater nodes with commodity sensitivity
+    const nodeId = graph.aliases?.[c.code] || graph.aliases?.[c.name];
+    const node = nodeId ? graph.nodes?.[nodeId] : null;
+    let region = null;
+    if (node) {
+      for (const linkId of node.links || []) {
+        const linked = graph.nodes?.[linkId];
+        if (linked?.type === 'theater' && CHOKEPOINT_COMMODITIES[linked.name]) {
+          region = linked.name;
+          break;
+        }
+      }
+    }
+    // Fallback: direct theater region lookup
+    if (!region) {
+      const matchedTheater = Object.entries(THEATER_REGIONS).find(([id]) => {
+        const theaterId = graph.aliases?.[c.name] || graph.aliases?.[c.code];
+        return theaterId && graph.nodes?.[theaterId]?.links?.includes(id);
+      });
+      region = matchedTheater ? THEATER_REGIONS[matchedTheater[0]] : null;
+    }
+    if (!region || affectedRegions.has(region)) continue;
+
+    const commodity = CHOKEPOINT_COMMODITIES[region];
+    if (!commodity) continue;
+    affectedRegions.add(region);
+
+    const prob = Math.min(0.7, normalize(c.score, 60, 100) * commodity.sensitivity * 0.8);
+    predictions.push(makePrediction(
+      'market', region,
+      `${commodity.commodity} volatility from ${countryName} instability`,
+      prob, 0.4, '30d',
+      [{ type: 'cii', value: `${countryName} CII ${c.score}`, weight: 0.4 },
+       { type: 'commodity', value: `${commodity.commodity} sensitivity: ${commodity.sensitivity}`, weight: 0.3 }],
+    ));
+  }
+
+  return predictions;
+}
+
+function detectSupplyChainScenarios(inputs) {
+  const predictions = [];
+  const chokepoints = inputs.chokepoints?.routes || inputs.chokepoints?.chokepoints || [];
+  const anomalies = Array.isArray(inputs.temporalAnomalies) ? inputs.temporalAnomalies : inputs.temporalAnomalies?.anomalies || [];
+  const jamming = Array.isArray(inputs.gpsJamming) ? inputs.gpsJamming : inputs.gpsJamming?.zones || [];
+
+  const seenRoutes = new Set();
+
+  for (const cp of chokepoints) {
+    const disrupted = cp.disrupted || cp.status === 'disrupted' || (cp.riskScore || 0) > 65;
+    if (!disrupted) continue;
+
+    const route = cp.route || cp.name || cp.region || '';
+    if (!route || seenRoutes.has(route)) continue;
+    seenRoutes.add(route);
+
+    const signals = [
+      { type: 'chokepoint', value: `${route} disruption detected`, weight: 0.5 },
+    ];
+    let sourceCount = 1;
+
+    const aisGaps = anomalies.filter(a =>
+      (a.type === 'ais_gaps' || a.type === 'ais_gap') &&
+      (a.region || a.zone || '').toLowerCase().includes(route.toLowerCase()),
+    );
+    if (aisGaps.length > 0) {
+      signals.push({ type: 'ais_gap', value: `${aisGaps.length} AIS gap anomalies near ${route}`, weight: 0.3 });
+      sourceCount++;
+    }
+
+    const nearbyJam = jamming.filter(j =>
+      (j.region || j.zone || j.name || '').toLowerCase().includes(route.toLowerCase()),
+    );
+    if (nearbyJam.length > 0) {
+      signals.push({ type: 'gps_jamming', value: `GPS interference near ${route}`, weight: 0.2 });
+      sourceCount++;
+    }
+
+    const riskNorm = normalize(cp.riskScore || 70, 40, 100);
+    const severityFloor = cp.riskLevel === 'critical' ? 0.55 : cp.riskLevel === 'high' ? 0.35 : 0;
+    const prob = Math.min(0.85, Math.max(severityFloor, riskNorm * 0.9) + (aisGaps.length > 0 ? 0.1 : 0) + (nearbyJam.length > 0 ? 0.05 : 0));
+    const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
+
+    predictions.push(makePrediction(
+      'supply_chain', cp.region || route,
+      `Supply chain disruption: ${route}`,
+      prob, confidence, '7d', signals,
+    ));
+  }
+
+  return predictions;
+}
+
+function detectPoliticalScenarios(inputs) {
+  const predictions = [];
+  const scores = extractCiiScores(inputs);
+  const anomalies = Array.isArray(inputs.temporalAnomalies) ? inputs.temporalAnomalies : inputs.temporalAnomalies?.anomalies || [];
+
+  for (const c of scores) {
+    if (!c.components) continue;
+    const unrestComp = c.components.unrest ?? 0;
+    if (unrestComp <= 50) continue;
+    if (c.score >= 80) continue;
+
+    const countryName = c.name.toLowerCase();
+    const signals = [
+      { type: 'unrest', value: `${c.name} unrest component: ${unrestComp}`, weight: 0.4 },
+    ];
+    let sourceCount = 1;
+
+    const protestAnomalies = anomalies.filter(a =>
+      (a.type === 'protest' || a.type === 'unrest') &&
+      (a.country || a.region || '').toLowerCase().includes(countryName),
+    );
+    if (protestAnomalies.length > 0) {
+      const maxZ = Math.max(...protestAnomalies.map(a => a.zScore || a.z_score || 0));
+      signals.push({ type: 'anomaly', value: `Protest anomaly z-score: ${maxZ.toFixed(1)}`, weight: 0.3 });
+      sourceCount++;
+    }
+
+    const unrestNorm = normalize(unrestComp, 30, 100);
+    const anomalyBoost = protestAnomalies.length > 0 ? 0.1 : 0;
+    const prob = Math.min(0.8, unrestNorm * 0.6 + anomalyBoost);
+    const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
+
+    predictions.push(makePrediction(
+      'political', c.name,
+      `Political instability: ${c.name}`,
+      prob, confidence, '30d', signals,
+    ));
+  }
+
+  return predictions;
+}
+
+function detectMilitaryScenarios(inputs) {
+  const predictions = [];
+  const theaters = inputs.theaterPosture?.theaters || [];
+  const anomalies = Array.isArray(inputs.temporalAnomalies) ? inputs.temporalAnomalies : inputs.temporalAnomalies?.anomalies || [];
+
+  for (const t of theaters) {
+    if (!t?.id) continue;
+    const posture = t.postureLevel || t.posture || '';
+    if (posture !== 'elevated' && posture !== 'critical') continue;
+
+    const region = THEATER_REGIONS[t.id] || t.name || t.id;
+    const signals = [
+      { type: 'theater', value: `${t.name || t.id} posture: ${posture}`, weight: 0.5 },
+    ];
+    let sourceCount = 1;
+
+    const milFlights = anomalies.filter(a =>
+      (a.type === 'military_flights' || a.type === 'military') &&
+      (a.region || a.theater || '').toLowerCase().includes(region.toLowerCase()),
+    );
+    if (milFlights.length > 0) {
+      const maxZ = Math.max(...milFlights.map(a => a.zScore || a.z_score || 0));
+      signals.push({ type: 'mil_flights', value: `Military flight anomaly z-score: ${maxZ.toFixed(1)}`, weight: 0.3 });
+      sourceCount++;
+    }
+
+    if (t.indicators && Array.isArray(t.indicators)) {
+      const activeIndicators = t.indicators.filter(i => i.active || i.triggered);
+      if (activeIndicators.length > 0) {
+        signals.push({ type: 'indicators', value: `${activeIndicators.length} active posture indicators`, weight: 0.2 });
+        sourceCount++;
+      }
+    }
+
+    const baseLine = posture === 'critical' ? 0.6 : 0.35;
+    const flightBoost = milFlights.length > 0 ? 0.1 : 0;
+    const prob = Math.min(0.85, baseLine + flightBoost);
+    const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
+
+    predictions.push(makePrediction(
+      'military', region,
+      `Military posture escalation: ${region}`,
+      prob, confidence, '7d', signals,
+    ));
+  }
+
+  return predictions;
+}
+
+function detectInfraScenarios(inputs) {
+  const predictions = [];
+  const outages = Array.isArray(inputs.outages) ? inputs.outages : inputs.outages?.outages || [];
+  const cyber = Array.isArray(inputs.cyberThreats) ? inputs.cyberThreats : inputs.cyberThreats?.threats || [];
+  const jamming = Array.isArray(inputs.gpsJamming) ? inputs.gpsJamming : inputs.gpsJamming?.zones || [];
+
+  for (const o of outages) {
+    const rawSev = (o.severity || o.type || '').toLowerCase();
+    // Handle both plain strings and proto enums (SEVERITY_LEVEL_HIGH, SEVERITY_LEVEL_CRITICAL)
+    const severity = rawSev.includes('critical') ? 'critical'
+      : rawSev.includes('high') ? 'major'
+      : rawSev.includes('total') ? 'total'
+      : rawSev.includes('major') ? 'major'
+      : rawSev;
+    if (severity !== 'major' && severity !== 'total' && severity !== 'critical') continue;
+
+    const country = resolveCountryName(o.country || o.region || o.name || '');
+    if (!country) continue;
+
+    const countryLower = country.toLowerCase();
+    const signals = [
+      { type: 'outage', value: `${country} ${severity} outage`, weight: 0.4 },
+    ];
+    let sourceCount = 1;
+
+    const relatedCyber = cyber.filter(t =>
+      (t.country || t.target || t.region || '').toLowerCase().includes(countryLower),
+    );
+    if (relatedCyber.length > 0) {
+      signals.push({ type: 'cyber', value: `${relatedCyber.length} cyber threats targeting ${country}`, weight: 0.3 });
+      sourceCount++;
+    }
+
+    const nearbyJam = jamming.filter(j =>
+      (j.country || j.region || j.name || '').toLowerCase().includes(countryLower),
+    );
+    if (nearbyJam.length > 0) {
+      signals.push({ type: 'gps_jamming', value: `GPS interference in ${country}`, weight: 0.2 });
+      sourceCount++;
+    }
+
+    const cyberBoost = relatedCyber.length > 0 ? 0.15 : 0;
+    const jamBoost = nearbyJam.length > 0 ? 0.05 : 0;
+    const baseLine = severity === 'total' ? 0.55 : 0.4;
+    const prob = Math.min(0.85, baseLine + cyberBoost + jamBoost);
+    const confidence = Math.max(0.3, normalize(sourceCount, 0, 4));
+
+    predictions.push(makePrediction(
+      'infrastructure', country,
+      `Infrastructure cascade risk: ${country}`,
+      prob, confidence, '24h', signals,
+    ));
+  }
+
+  return predictions;
+}
+
+// ── Phase 4: Standalone detectors ───────────────────────────
+function detectUcdpConflictZones(inputs) {
+  const predictions = [];
+  const ucdp = Array.isArray(inputs.ucdpEvents) ? inputs.ucdpEvents : inputs.ucdpEvents?.events || [];
+  if (ucdp.length === 0) return predictions;
+
+  const byCountry = {};
+  for (const e of ucdp) {
+    const country = e.country || e.country_name || '';
+    if (!country) continue;
+    byCountry[country] = (byCountry[country] || 0) + 1;
+  }
+
+  for (const [country, count] of Object.entries(byCountry)) {
+    if (count < 10) continue;
+    predictions.push(makePrediction(
+      'conflict', country,
+      `Active armed conflict: ${country}`,
+      Math.min(0.85, normalize(count, 5, 100) * 0.7),
+      0.3, '30d',
+      [{ type: 'ucdp', value: `${count} UCDP conflict events`, weight: 0.5 }],
+    ));
+  }
+  return predictions;
+}
+
+function detectCyberScenarios(inputs) {
+  const predictions = [];
+  const threats = Array.isArray(inputs.cyberThreats) ? inputs.cyberThreats : inputs.cyberThreats?.threats || [];
+  if (threats.length < 5) return predictions;
+
+  const byCountry = {};
+  for (const t of threats) {
+    const country = resolveCountryName(t.country || t.target || t.region || '');
+    if (!country) continue;
+    if (!byCountry[country]) byCountry[country] = [];
+    byCountry[country].push(t);
+  }
+
+  for (const [country, items] of Object.entries(byCountry)) {
+    if (items.length < 5) continue;
+    const types = new Set(items.map(t => t.type || t.category || 'unknown'));
+    predictions.push(makePrediction(
+      'infrastructure', country,
+      `Cyber threat concentration: ${country}`,
+      Math.min(0.7, normalize(items.length, 3, 50) * 0.6),
+      0.3, '7d',
+      [{ type: 'cyber', value: `${items.length} threats (${[...types].join(', ')})`, weight: 0.5 }],
+    ));
+  }
+  return predictions;
+}
+
+const MARITIME_REGIONS = {
+  'Eastern Mediterranean': { latRange: [33, 37], lonRange: [25, 37] },
+  'Red Sea': { latRange: [11, 22], lonRange: [32, 54] },
+  'Persian Gulf': { latRange: [20, 32], lonRange: [45, 60] },
+  'Black Sea': { latRange: [40, 48], lonRange: [26, 42] },
+  'Baltic Sea': { latRange: [52, 65], lonRange: [10, 32] },
+};
+
+function detectGpsJammingScenarios(inputs) {
+  const predictions = [];
+  const zones = Array.isArray(inputs.gpsJamming) ? inputs.gpsJamming
+    : inputs.gpsJamming?.zones || inputs.gpsJamming?.hexes || [];
+  if (zones.length === 0) return predictions;
+
+  for (const [region, bounds] of Object.entries(MARITIME_REGIONS)) {
+    const inRegion = zones.filter(h => {
+      const lat = h.lat || h.latitude || 0;
+      const lon = h.lon || h.longitude || 0;
+      return lat >= bounds.latRange[0] && lat <= bounds.latRange[1]
+          && lon >= bounds.lonRange[0] && lon <= bounds.lonRange[1];
+    });
+    if (inRegion.length < 3) continue;
+    predictions.push(makePrediction(
+      'supply_chain', region,
+      `GPS interference in ${region} shipping zone`,
+      Math.min(0.75, normalize(inRegion.length, 2, 60) * 0.7 + (inRegion.length > 20 ? 0.1 : 0)),
+      0.3, '7d',
+      [{ type: 'gps_jamming', value: `${inRegion.length} jamming hexes in ${region}`, weight: 0.5 }],
+    ));
+  }
+  return predictions;
+}
+
+const MARKET_TAG_TO_REGION = {
+  mena: 'Middle East', eu: 'Europe', asia: 'Asia-Pacific',
+  america: 'Americas', latam: 'Latin America', africa: 'Africa', oceania: 'Oceania',
+};
+
+function detectFromPredictionMarkets(inputs) {
+  const predictions = [];
+  const markets = inputs.predictionMarkets?.geopolitical || [];
+
+  for (const m of markets) {
+    const yesPrice = (m.yesPrice || 50) / 100;
+    if (yesPrice < 0.6 || yesPrice > 0.9) continue;
+    const tags = tagRegions(m.title);
+    if (tags.length === 0) continue;
+    const region = MARKET_TAG_TO_REGION[tags[0]] || tags[0];
+
+    const titleLower = m.title.toLowerCase();
+    const domain = titleLower.match(/war|strike|military|attack/) ? 'conflict'
+      : titleLower.match(/tariff|recession|economy|gdp/) ? 'market'
+      : 'political';
+
+    predictions.push(makePrediction(
+      domain, region,
+      m.title.slice(0, 100),
+      yesPrice, 0.7, '30d',
+      [{ type: 'prediction_market', value: `${m.source || 'Polymarket'}: ${Math.round(yesPrice * 100)}%`, weight: 0.8 }],
+    ));
+  }
+  return predictions.slice(0, 5);
+}
+
+// ── Phase 4: Entity graph ───────────────────────────────────
+let _entityGraph = null;
+function loadEntityGraph() {
+  if (_entityGraph) return _entityGraph;
+  try {
+    const graphPath = new URL('./data/entity-graph.json', import.meta.url);
+    _entityGraph = JSON.parse(readFileSync(graphPath, 'utf8'));
+    console.log(`  [Graph] Loaded ${Object.keys(_entityGraph.nodes).length} nodes`);
+    return _entityGraph;
+  } catch (err) {
+    console.warn(`  [Graph] Failed: ${err.message}`);
+    return { nodes: {}, edges: [], aliases: {} };
+  }
+}
+
+function discoverGraphCascades(predictions, graph) {
+  if (!graph?.nodes || !graph?.aliases) return;
+  for (const pred of predictions) {
+    const nodeId = graph.aliases[pred.region];
+    if (!nodeId) continue;
+    const node = graph.nodes[nodeId];
+    if (!node?.links) continue;
+
+    for (const linkedId of node.links) {
+      const linked = graph.nodes[linkedId];
+      if (!linked) continue;
+      const linkedPred = predictions.find(p =>
+        p !== pred && p.domain !== pred.domain && graph.aliases[p.region] === linkedId
+      );
+      if (!linkedPred) continue;
+
+      const edge = graph.edges.find(e =>
+        (e.from === nodeId && e.to === linkedId) || (e.from === linkedId && e.to === nodeId)
+      );
+      const coupling = (edge?.weight || 0.3) * 0.5;
+      pred.cascades.push({
+        domain: linkedPred.domain,
+        effect: `graph: ${edge?.relation || 'linked'} via ${linked.name}`,
+        probability: Math.round(Math.min(0.6, pred.probability * coupling) * 1000) / 1000,
+      });
+    }
+  }
+}
+
+// ── Phase 3: Data-driven cascade rules ─────────────────────
+const DEFAULT_CASCADE_RULES = [
+  { from: 'conflict', to: 'supply_chain', coupling: 0.6, mechanism: 'chokepoint disruption', requiresChokepoint: true },
+  { from: 'conflict', to: 'market', coupling: 0.5, mechanism: 'commodity price shock', requiresChokepoint: true },
+  { from: 'political', to: 'conflict', coupling: 0.4, mechanism: 'instability escalation', minProbability: 0.6 },
+  { from: 'military', to: 'conflict', coupling: 0.5, mechanism: 'force deployment', requiresCriticalPosture: true },
+  { from: 'supply_chain', to: 'market', coupling: 0.4, mechanism: 'supply shortage pricing' },
+];
+
+const PREDICATE_EVALUATORS = {
+  requiresChokepoint: (pred) => !!CHOKEPOINT_COMMODITIES[pred.region],
+  requiresCriticalPosture: (pred) => pred.signals.some(s => s.type === 'theater' && s.value.includes('critical')),
+  minProbability: (pred, val) => pred.probability >= val,
+  requiresSeverity: (pred, val) => pred.signals.some(s => s.type === 'outage' && s.value.toLowerCase().includes(val)),
+};
+
+function evaluateRuleConditions(rule, pred) {
+  for (const [key, val] of Object.entries(rule)) {
+    if (['from', 'to', 'coupling', 'mechanism'].includes(key)) continue;
+    const evaluator = PREDICATE_EVALUATORS[key];
+    if (!evaluator) continue;
+    if (!evaluator(pred, val)) return false;
+  }
+  return true;
+}
+
+function loadCascadeRules() {
+  try {
+    const rulesPath = new URL('./data/cascade-rules.json', import.meta.url);
+    const raw = JSON.parse(readFileSync(rulesPath, 'utf8'));
+    if (!Array.isArray(raw)) throw new Error('cascade rules must be array');
+    const KNOWN_FIELDS = new Set(['from', 'to', 'coupling', 'mechanism', ...Object.keys(PREDICATE_EVALUATORS)]);
+    for (const r of raw) {
+      if (!r.from || !r.to || typeof r.coupling !== 'number' || !r.mechanism) {
+        throw new Error(`invalid rule: ${JSON.stringify(r)}`);
+      }
+      for (const key of Object.keys(r)) {
+        if (!KNOWN_FIELDS.has(key)) throw new Error(`unknown predicate '${key}' in rule: ${r.mechanism}`);
+      }
+    }
+    console.log(`  [Cascade] Loaded ${raw.length} rules from JSON`);
+    return raw;
+  } catch (err) {
+    console.warn(`  [Cascade] Failed to load rules: ${err.message}, using defaults`);
+    return DEFAULT_CASCADE_RULES;
+  }
+}
+
+function resolveCascades(predictions, rules) {
+  const seen = new Set();
+  for (const rule of rules) {
+    const sources = predictions.filter(p => p.domain === rule.from);
+    for (const src of sources) {
+      if (!evaluateRuleConditions(rule, src)) continue;
+      const cascadeProb = Math.min(0.8, src.probability * rule.coupling);
+      const key = `${src.id}:${rule.to}:${rule.mechanism}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      src.cascades.push({ domain: rule.to, effect: rule.mechanism, probability: +cascadeProb.toFixed(3) });
+    }
+  }
+}
+
+// ── Phase 3: Probability projections ───────────────────────
+const PROJECTION_CURVES = {
+  conflict:       { h24: 0.91, d7: 1.0, d30: 0.78 },
+  market:         { h24: 1.0, d7: 0.58, d30: 0.42 },
+  supply_chain:   { h24: 0.91, d7: 1.0, d30: 0.64 },
+  political:      { h24: 0.83, d7: 0.87, d30: 1.0 },
+  military:       { h24: 1.0, d7: 0.91, d30: 0.65 },
+  infrastructure: { h24: 1.0, d7: 0.5, d30: 0.25 },
+};
+
+function computeProjections(predictions) {
+  for (const pred of predictions) {
+    const curve = PROJECTION_CURVES[pred.domain] || { h24: 1, d7: 1, d30: 1 };
+    const anchor = pred.timeHorizon === '24h' ? 'h24' : pred.timeHorizon === '30d' ? 'd30' : 'd7';
+    const anchorMult = curve[anchor] || 1;
+    const base = anchorMult > 0 ? pred.probability / anchorMult : pred.probability;
+    pred.projections = {
+      h24: Math.round(Math.min(0.95, Math.max(0.01, base * curve.h24)) * 1000) / 1000,
+      d7:  Math.round(Math.min(0.95, Math.max(0.01, base * curve.d7)) * 1000) / 1000,
+      d30: Math.round(Math.min(0.95, Math.max(0.01, base * curve.d30)) * 1000) / 1000,
+    };
+  }
+}
+
+function calibrateWithMarkets(predictions, markets) {
+  if (!markets?.geopolitical) return;
+  for (const pred of predictions) {
+    const keywords = REGION_KEYWORDS[pred.region] || [];
+    if (keywords.length === 0) continue;
+    const match = markets.geopolitical.find(m => {
+      const mRegions = tagRegions(m.title);
+      return mRegions.some(r => keywords.includes(r));
+    });
+    if (match) {
+      const marketProb = (match.yesPrice || 50) / 100;
+      pred.calibration = {
+        marketTitle: match.title,
+        marketPrice: +marketProb.toFixed(3),
+        drift: +(pred.probability - marketProb).toFixed(3),
+        source: match.source || 'polymarket',
+      };
+      pred.probability = +(0.4 * marketProb + 0.6 * pred.probability).toFixed(3);
+    }
+  }
+}
+
+async function readPriorPredictions() {
+  try {
+    const { url, token } = getRedisCredentials();
+    return await redisGet(url, token, PRIOR_KEY);
+  } catch { return null; }
+}
+
+function computeTrends(predictions, prior) {
+  if (!prior?.predictions) {
+    for (const p of predictions) { p.trend = 'stable'; p.priorProbability = p.probability; }
+    return;
+  }
+  const priorMap = new Map(prior.predictions.map(p => [p.id, p]));
+  for (const p of predictions) {
+    const prev = priorMap.get(p.id);
+    if (!prev) { p.trend = 'stable'; p.priorProbability = p.probability; continue; }
+    p.priorProbability = prev.probability;
+    const delta = p.probability - prev.probability;
+    p.trend = delta > 0.05 ? 'rising' : delta < -0.05 ? 'falling' : 'stable';
+  }
+}
+
+// ── Phase 2: News Context + Entity Matching ────────────────
+let _countryCodes = null;
+function loadCountryCodes() {
+  if (_countryCodes) return _countryCodes;
+  try {
+    const codePath = new URL('./data/country-codes.json', import.meta.url);
+    _countryCodes = JSON.parse(readFileSync(codePath, 'utf8'));
+    return _countryCodes;
+  } catch { return {}; }
+}
+
+const NEWS_MATCHABLE_TYPES = new Set(['country', 'theater']);
+
+function getSearchTermsForRegion(region) {
+  const terms = [region];
+  const codes = loadCountryCodes();
+  const graph = loadEntityGraph();
+
+  // 1. Country codes JSON: resolve ISO codes to names + keywords
+  const countryEntry = codes[region];
+  if (countryEntry) {
+    terms.push(countryEntry.name);
+    terms.push(...countryEntry.keywords);
+  }
+
+  // 2. Reverse lookup: if region is a full name (or has parenthetical suffix like "Myanmar (Burma)")
+  if (!countryEntry) {
+    const regionLower = region.toLowerCase();
+    const regionBase = region.replace(/\s*\([^)]*\)\s*$/, '').toLowerCase(); // strip "(Zaire)", "(Burma)", etc.
+    for (const [, entry] of Object.entries(codes)) {
+      const nameLower = entry.name.toLowerCase();
+      if (nameLower === regionLower || nameLower === regionBase || regionLower.includes(nameLower)) {
+        terms.push(entry.name);
+        terms.push(...entry.keywords);
+        break;
+      }
+    }
+  }
+
+  // 3. Entity graph: add linked country/theater names (not commodities)
+  const nodeId = graph.aliases?.[region];
+  const node = nodeId ? graph.nodes?.[nodeId] : null;
+  if (node) {
+    if (node.name !== region) terms.push(node.name);
+    for (const linkId of node.links || []) {
+      const linked = graph.nodes?.[linkId];
+      if (linked && NEWS_MATCHABLE_TYPES.has(linked.type) && linked.name.length > 2) {
+        terms.push(linked.name);
+      }
+    }
+  }
+
+  // Dedupe and filter short terms
+  return [...new Set(terms)].filter(t => t && t.length > 2);
+}
+
+function extractAllHeadlines(newsInsights, newsDigest) {
+  const headlines = [];
+  const seen = new Set();
+  // 1. Digest has 300+ headlines across 16 categories
+  if (newsDigest?.categories) {
+    for (const bucket of Object.values(newsDigest.categories)) {
+      for (const item of bucket?.items || []) {
+        if (item?.title && !seen.has(item.title)) { seen.add(item.title); headlines.push(item.title); }
+      }
+    }
+  }
+  // 2. Fallback to topStories if digest is empty
+  if (headlines.length === 0 && newsInsights?.topStories) {
+    for (const s of newsInsights.topStories) {
+      if (s?.primaryTitle && !seen.has(s.primaryTitle)) { seen.add(s.primaryTitle); headlines.push(s.primaryTitle); }
+    }
+  }
+  return headlines;
+}
+
+function attachNewsContext(predictions, newsInsights, newsDigest) {
+  const allHeadlines = extractAllHeadlines(newsInsights, newsDigest);
+  if (allHeadlines.length === 0) return;
+
+  for (const pred of predictions) {
+    const searchTerms = getSearchTermsForRegion(pred.region);
+
+    const matched = allHeadlines.filter(h => {
+      const lower = h.toLowerCase();
+      return searchTerms.some(t => lower.includes(t.toLowerCase()));
+    });
+
+    pred.newsContext = matched.length > 0 ? matched.slice(0, 3) : allHeadlines.slice(0, 3);
+
+    if (matched.length > 0) {
+      pred.signals.push({
+        type: 'news_corroboration',
+        value: `${matched.length} headline(s) mention ${pred.region} or linked entities`,
+        weight: 0.15,
+      });
+    }
+  }
+}
+
+// ── Phase 2: Deterministic Confidence Model ────────────────
+const SIGNAL_TO_SOURCE = {
+  cii: 'cii', cii_delta: 'cii', unrest: 'cii',
+  conflict_events: 'iran_events',
+  ucdp: 'ucdp',
+  theater: 'theater_posture', indicators: 'theater_posture',
+  mil_flights: 'temporal_anomalies', anomaly: 'temporal_anomalies',
+  chokepoint: 'chokepoints',
+  ais_gap: 'temporal_anomalies',
+  gps_jamming: 'gps_jamming',
+  outage: 'outages',
+  cyber: 'cyber_threats',
+  prediction_market: 'prediction_markets',
+  news_corroboration: 'news_insights',
+};
+
+function computeConfidence(predictions) {
+  for (const pred of predictions) {
+    const sources = new Set(pred.signals.map(s => SIGNAL_TO_SOURCE[s.type] || s.type));
+    const sourceDiversity = normalize(sources.size, 1, 4);
+    const calibrationAgreement = pred.calibration
+      ? Math.max(0, 1 - Math.abs(pred.calibration.drift) * 3)
+      : 0.5;
+    const conf = 0.5 * sourceDiversity + 0.5 * calibrationAgreement;
+    pred.confidence = Math.round(Math.max(0.2, Math.min(1, conf)) * 1000) / 1000;
+  }
+}
+
+// ── Phase 2: LLM Scenario Enrichment ───────────────────────
+const FORECAST_LLM_PROVIDERS = [
+  { name: 'groq', envKey: 'GROQ_API_KEY', apiUrl: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.1-8b-instant', timeout: 20_000 },
+  { name: 'openrouter', envKey: 'OPENROUTER_API_KEY', apiUrl: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemini-2.5-flash', timeout: 25_000 },
+];
+
+const SCENARIO_SYSTEM_PROMPT = `You are a senior geopolitical intelligence analyst writing scenario briefs.
+
+RULES:
+- Each scenario MUST be exactly 2-3 sentences, 40-80 words.
+- Each scenario MUST name at least one specific signal value from the data (e.g., "CII score of 87", "3 UCDP events", "theater posture elevated").
+- Each scenario MUST state a causal mechanism (what leads to what).
+- Do NOT use hedging words ("could", "might", "potentially") without citing a data point.
+- Do NOT use your own knowledge. Base everything on the provided signals and headlines.
+
+GOOD EXAMPLE:
+{"index": 0, "scenario": "Iran's CII score of 87 (critical, rising) combined with 3 active UCDP conflict events indicates sustained military pressure. The elevated Middle East theater posture with 47 tracked flights suggests force projection capability is being maintained."}
+
+BAD EXAMPLE (too generic, no signal values):
+{"index": 0, "scenario": "Tensions in the Middle East continue to escalate as various factors contribute to regional instability."}
+
+Respond with ONLY a JSON array: [{"index": 0, "scenario": "..."}, ...]`;
+
+// Phase 3: Combined scenario + perspectives prompt for top-2 predictions
+const COMBINED_SYSTEM_PROMPT = `You are a senior geopolitical intelligence analyst. For each prediction:
+
+1. Write a SCENARIO (2-3 sentences, evidence-grounded, citing signal values)
+2. Write 3 PERSPECTIVES (1-2 sentences each):
+   - STRATEGIC: Neutral analysis of what signals indicate
+   - REGIONAL: What this means for actors in the affected region
+   - CONTRARIAN: What factors could prevent or reverse this outcome
+
+RULES:
+- Every sentence MUST cite a specific signal value from the data
+- Base everything on provided data, not your knowledge
+- Do NOT use hedging without a data point
+
+Output JSON array:
+[{"index": 0, "scenario": "...", "strategic": "...", "regional": "...", "contrarian": "..."}, ...]`;
+
+function validatePerspectives(items, predictions) {
+  if (!Array.isArray(items)) return [];
+  return items.filter(item => {
+    if (typeof item.index !== 'number' || item.index < 0 || item.index >= predictions.length) return false;
+    for (const key of ['strategic', 'regional', 'contrarian']) {
+      if (typeof item[key] !== 'string') return false;
+      item[key] = item[key].replace(/<[^>]*>/g, '').trim().slice(0, 300);
+      if (item[key].length < 20) return false;
+    }
+    return true;
+  });
+}
+
+function sanitizeForPrompt(text) {
+  return (text || '').replace(/[\n\r]/g, ' ').replace(/[<>{}\x00-\x1f]/g, '').slice(0, 200).trim();
+}
+
+function parseLLMScenarios(text) {
+  const cleaned = text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\|thinking\|>[\s\S]*?<\|\/thinking\|>/gi, '')
+    .trim();
+  // Try complete JSON array first
+  const match = cleaned.match(/\[[\s\S]*\]/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch { /* fall through to repair */ }
+  }
+  // Try truncated: find opening bracket and attempt repair
+  const bracketIdx = cleaned.indexOf('[');
+  if (bracketIdx === -1) return null;
+  const partial = cleaned.slice(bracketIdx);
+  for (const suffix of ['"}]', '}]', '"]', ']']) {
+    try { return JSON.parse(partial + suffix); } catch { /* next */ }
+  }
+  return null;
+}
+
+function validateScenarios(scenarios, predictions) {
+  if (!Array.isArray(scenarios)) return [];
+  return scenarios.filter(s => {
+    if (!s || typeof s.scenario !== 'string' || s.scenario.length < 30) return false;
+    if (typeof s.index !== 'number' || s.index < 0 || s.index >= predictions.length) return false;
+    const pred = predictions[s.index];
+    const scenarioLower = s.scenario.toLowerCase();
+    const hasSignalRef = pred.signals.some(sig =>
+      scenarioLower.includes(sig.type.toLowerCase()) ||
+      sig.value.split(/\s+/).some(word => word.length > 3 && scenarioLower.includes(word.toLowerCase()))
+    );
+    if (!hasSignalRef) {
+      console.warn(`  [LLM] Scenario ${s.index} rejected: no signal reference`);
+      return false;
+    }
+    s.scenario = s.scenario.replace(/<[^>]*>/g, '').slice(0, 500);
+    return true;
+  });
+}
+
+async function callForecastLLM(systemPrompt, userPrompt) {
+  const available = FORECAST_LLM_PROVIDERS.filter(p => !!process.env[p.envKey]);
+  if (available.length === 0) {
+    console.warn(`  [LLM] No providers configured. Set one of: ${FORECAST_LLM_PROVIDERS.map(p => p.envKey).join(', ')}`);
+    return null;
+  }
+  console.log(`  [LLM] Trying providers: ${available.map(p => p.name).join(', ')}`);
+  for (const provider of FORECAST_LLM_PROVIDERS) {
+    const apiKey = process.env[provider.envKey];
+    if (!apiKey) continue;
+    try {
+      const resp = await fetch(provider.apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'User-Agent': CHROME_UA,
+          ...(provider.name === 'openrouter' ? { 'HTTP-Referer': 'https://worldmonitor.app', 'X-Title': 'World Monitor' } : {}),
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: 1500,
+          temperature: 0.3,
+        }),
+        signal: AbortSignal.timeout(provider.timeout),
+      });
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => '');
+        console.warn(`  [LLM] ${provider.name}: HTTP ${resp.status} ${errBody.slice(0, 100)}`);
+        continue;
+      }
+      const json = await resp.json();
+      const text = json.choices?.[0]?.message?.content?.trim();
+      if (!text || text.length < 20) {
+        console.warn(`  [LLM] ${provider.name}: empty/short response (${text?.length || 0} chars)`);
+        continue;
+      }
+      console.log(`  [LLM] ${provider.name} OK (${text.length} chars)`);
+      return { text, model: json.model || provider.model, provider: provider.name };
+    } catch (err) { console.warn(`  [LLM] ${provider.name}: ${err.message}`); continue; }
+  }
+  console.warn('  [LLM] All providers failed');
+  return null;
+}
+
+async function redisSet(url, token, key, data, ttlSeconds) {
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(['SET', key, JSON.stringify(data), 'EX', ttlSeconds]),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (err) { console.warn(`  [Redis] Cache write failed for ${key}: ${err.message}`); }
+}
+
+function buildCacheHash(preds) {
+  return crypto.createHash('sha256')
+    .update(JSON.stringify(preds.map(p => ({
+      id: p.id, d: p.domain, r: p.region, p: p.probability,
+      s: p.signals.map(s => s.value).join(','),
+      c: p.calibration?.drift,
+      n: (p.newsContext || []).join(','),
+    }))))
+    .digest('hex').slice(0, 16);
+}
+
+function buildUserPrompt(preds) {
+  const seen = new Set();
+  const mergedHeadlines = [];
+  for (const p of preds) {
+    for (const h of p.newsContext || []) {
+      if (!seen.has(h)) { seen.add(h); mergedHeadlines.push(h); }
+    }
+  }
+  const headlines = mergedHeadlines.slice(0, 5).map(h => `- ${sanitizeForPrompt(h)}`).join('\n');
+  const predsText = preds.map((p, i) => {
+    const sigs = p.signals.map(s => `[SIGNAL] ${sanitizeForPrompt(s.value)}`).join('\n');
+    const cal = p.calibration ? `\n[CALIBRATION] ${sanitizeForPrompt(p.calibration.marketTitle)} at ${Math.round(p.calibration.marketPrice * 100)}%` : '';
+    return `[${i}] "${sanitizeForPrompt(p.title)}" (${p.domain}, ${p.region})\nProbability: ${Math.round(p.probability * 100)}% | Horizon: ${p.timeHorizon}\n${sigs}${cal}`;
+  }).join('\n\n');
+  return headlines ? `Current top headlines:\n${headlines}\n\nPredictions to analyze:\n\n${predsText}` : `Predictions to analyze:\n\n${predsText}`;
+}
+
+async function enrichScenariosWithLLM(predictions) {
+  if (predictions.length === 0) return;
+  const { url, token } = getRedisCredentials();
+
+  // Phase 3: Top-2 get combined scenario + perspectives
+  const topWithPerspectives = predictions.slice(0, 2);
+  const scenarioOnly = predictions.slice(2, 4);
+
+  // Call 1: Combined scenario + perspectives for top-2
+  if (topWithPerspectives.length > 0) {
+    const hash = buildCacheHash(topWithPerspectives);
+    const cacheKey = `forecast:llm-combined:${hash}`;
+    const cached = await redisGet(url, token, cacheKey);
+
+    if (cached?.items) {
+      for (const item of cached.items) {
+        if (item.index >= 0 && item.index < topWithPerspectives.length) {
+          if (item.scenario) topWithPerspectives[item.index].scenario = item.scenario;
+          if (item.strategic) topWithPerspectives[item.index].perspectives = { strategic: item.strategic, regional: item.regional, contrarian: item.contrarian };
+        }
+      }
+      console.log(JSON.stringify({ event: 'llm_combined', cached: true, count: cached.items.length, hash }));
+    } else {
+      const t0 = Date.now();
+      const result = await callForecastLLM(COMBINED_SYSTEM_PROMPT, buildUserPrompt(topWithPerspectives));
+      if (result) {
+        const raw = parseLLMScenarios(result.text);
+        const validScenarios = validateScenarios(raw, topWithPerspectives);
+        const validPerspectives = validatePerspectives(raw, topWithPerspectives);
+
+        for (const s of validScenarios) {
+          topWithPerspectives[s.index].scenario = s.scenario;
+        }
+        for (const p of validPerspectives) {
+          topWithPerspectives[p.index].perspectives = { strategic: p.strategic, regional: p.regional, contrarian: p.contrarian };
+        }
+
+        // Cache only validated items (not raw) to prevent persisting invalid LLM output
+        const items = [];
+        for (const s of validScenarios) {
+          const entry = { index: s.index, scenario: s.scenario };
+          const p = validPerspectives.find(vp => vp.index === s.index);
+          if (p) { entry.strategic = p.strategic; entry.regional = p.regional; entry.contrarian = p.contrarian; }
+          items.push(entry);
+        }
+
+        console.log(JSON.stringify({
+          event: 'llm_combined', provider: result.provider, model: result.model,
+          hash, count: topWithPerspectives.length,
+          scenarios: validScenarios.length, perspectives: validPerspectives.length,
+          latencyMs: Math.round(Date.now() - t0), cached: false,
+        }));
+
+        if (items.length > 0) await redisSet(url, token, cacheKey, { items }, 3600);
+      } else {
+        console.warn('  [LLM] Combined call failed');
+      }
+    }
+  }
+
+  // Call 2: Scenario-only for predictions 3-4
+  if (scenarioOnly.length > 0) {
+    const hash = buildCacheHash(scenarioOnly);
+    const cacheKey = `forecast:llm-scenarios:${hash}`;
+    const cached = await redisGet(url, token, cacheKey);
+
+    if (cached?.scenarios) {
+      for (const s of cached.scenarios) {
+        if (s.index >= 0 && s.index < scenarioOnly.length && s.scenario) {
+          scenarioOnly[s.index].scenario = s.scenario;
+        }
+      }
+      console.log(JSON.stringify({ event: 'llm_scenario', cached: true, count: cached.scenarios.length, hash }));
+    } else {
+      const t0 = Date.now();
+      const result = await callForecastLLM(SCENARIO_SYSTEM_PROMPT, buildUserPrompt(scenarioOnly));
+      if (result) {
+        const raw = parseLLMScenarios(result.text);
+        const valid = validateScenarios(raw, scenarioOnly);
+        for (const s of valid) { scenarioOnly[s.index].scenario = s.scenario; }
+
+        console.log(JSON.stringify({
+          event: 'llm_scenario', provider: result.provider, model: result.model,
+          hash, count: scenarioOnly.length, scenarios: valid.length,
+          latencyMs: Math.round(Date.now() - t0), cached: false,
+        }));
+
+        if (valid.length > 0) await redisSet(url, token, cacheKey, { scenarios: valid }, 3600);
+      }
+    }
+  }
+}
+
+// ── Main pipeline ──────────────────────────────────────────
+async function fetchForecasts() {
+  await warmPingChokepoints();
+
+  console.log('  Reading input data from Redis...');
+  const inputs = await readInputKeys();
+  const prior = await readPriorPredictions();
+
+  console.log('  Running domain detectors...');
+  const predictions = [
+    ...detectConflictScenarios(inputs),
+    ...detectMarketScenarios(inputs),
+    ...detectSupplyChainScenarios(inputs),
+    ...detectPoliticalScenarios(inputs),
+    ...detectMilitaryScenarios(inputs),
+    ...detectInfraScenarios(inputs),
+    ...detectUcdpConflictZones(inputs),
+    ...detectCyberScenarios(inputs),
+    ...detectGpsJammingScenarios(inputs),
+    ...detectFromPredictionMarkets(inputs),
+  ];
+
+  // Log per-domain breakdown and top predictions for diagnostics
+  const byDomain = {};
+  for (const p of predictions) byDomain[p.domain] = (byDomain[p.domain] || 0) + 1;
+  console.log(JSON.stringify({ event: 'detectors', total: predictions.length, byDomain }));
+  const top5 = [...predictions].sort((a, b) => b.probability - a.probability).slice(0, 5);
+  for (const p of top5) console.log(`  top: ${p.domain} | ${p.region} | prob=${p.probability} | ${p.title.slice(0, 60)}`);
+
+  attachNewsContext(predictions, inputs.newsInsights, inputs.newsDigest);
+  calibrateWithMarkets(predictions, inputs.predictionMarkets);
+  computeConfidence(predictions);
+  computeProjections(predictions);
+  const cascadeRules = loadCascadeRules();
+  resolveCascades(predictions, cascadeRules);
+  discoverGraphCascades(predictions, loadEntityGraph());
+  computeTrends(predictions, prior);
+
+  predictions.sort((a, b) => (b.probability * b.confidence) - (a.probability * a.confidence));
+
+  await enrichScenariosWithLLM(predictions);
+
+  return { predictions, generatedAt: Date.now() };
+}
+
+if (_isDirectRun) {
+  await runSeed('forecast', 'predictions', CANONICAL_KEY, fetchForecasts, {
+    ttlSeconds: TTL_SECONDS,
+    lockTtlMs: 180_000,
+    validateFn: (data) => Array.isArray(data?.predictions) && data.predictions.length > 0,
+    extraKeys: [
+      {
+        key: PRIOR_KEY,
+        transform: (data) => ({
+          predictions: data.predictions.map(p => ({ id: p.id, probability: p.probability })),
+        }),
+        ttl: 7200,
+      },
+    ],
+  });
+}
+
+export {
+  forecastId,
+  normalize,
+  makePrediction,
+  normalizeCiiEntry,
+  extractCiiScores,
+  resolveCascades,
+  calibrateWithMarkets,
+  computeTrends,
+  detectConflictScenarios,
+  detectMarketScenarios,
+  detectSupplyChainScenarios,
+  detectPoliticalScenarios,
+  detectMilitaryScenarios,
+  detectInfraScenarios,
+  attachNewsContext,
+  computeConfidence,
+  sanitizeForPrompt,
+  parseLLMScenarios,
+  validateScenarios,
+  validatePerspectives,
+  computeProjections,
+  loadCascadeRules,
+  evaluateRuleConditions,
+  SIGNAL_TO_SOURCE,
+  PREDICATE_EVALUATORS,
+  DEFAULT_CASCADE_RULES,
+  PROJECTION_CURVES,
+  normalizeChokepoints,
+  normalizeGpsJamming,
+  detectUcdpConflictZones,
+  detectCyberScenarios,
+  detectGpsJammingScenarios,
+  detectFromPredictionMarkets,
+  loadEntityGraph,
+  discoverGraphCascades,
+  MARITIME_REGIONS,
+  MARKET_TAG_TO_REGION,
+  resolveCountryName,
+  loadCountryCodes,
+  getSearchTermsForRegion,
+  extractAllHeadlines,
+};

@@ -2,7 +2,7 @@ import type {
   ServerContext,
   ListTemporalAnomaliesRequest,
   ListTemporalAnomaliesResponse,
-  TemporalAnomaly,
+  TemporalAnomaly as TemporalAnomalyProto,
 } from '../../../../src/generated/server/worldmonitor/infrastructure/v1/service_server';
 
 import { getCachedJson, setCachedJson } from '../../../_shared/redis';

@@ -33,9 +33,9 @@ export async function getBisPolicyRates(
       // Group rows by country, take last 2 observations
       const byCountry = new Map<string, Array<{ date: string; value: number }>>();
       for (const row of rows) {
-        const cc = row['REF_AREA'] || row['Reference area'] || '';
-        const date = row['TIME_PERIOD'] || row['Time period'] || '';
-        const val = parseBisNumber(row['OBS_VALUE'] || row['Observation value']);
+        const cc = row.REF_AREA || row['Reference area'] || '';
+        const date = row.TIME_PERIOD || row['Time period'] || '';
+        const val = parseBisNumber(row.OBS_VALUE || row['Observation value']);
         if (!cc || !date || val === null) continue;
         if (!byCountry.has(cc)) byCountry.set(cc, []);
         byCountry.get(cc)!.push({ date, value: val });
