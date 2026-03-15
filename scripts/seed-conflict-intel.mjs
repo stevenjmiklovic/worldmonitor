@@ -260,6 +260,11 @@ async function fetchAll() {
   const pi = pizzint.status === 'fulfilled' ? pizzint.value : null;
   const gd = gdelt.status === 'fulfilled' ? gdelt.value : null;
 
+  if (acled.status === 'rejected') console.warn(`  ACLED failed: ${acled.reason?.message || acled.reason}`);
+  if (hapi.status === 'rejected') console.warn(`  HAPI failed: ${hapi.reason?.message || hapi.reason}`);
+  if (pizzint.status === 'rejected') console.warn(`  PizzINT failed: ${pizzint.reason?.message || pizzint.reason}`);
+  if (gdelt.status === 'rejected') console.warn(`  GDELT failed: ${gdelt.reason?.message || gdelt.reason}`);
+
   if (!ac && !pi) throw new Error('All conflict/intel fetches failed');
 
   // Write secondary keys BEFORE returning (runSeed calls process.exit after primary write)

@@ -179,8 +179,10 @@ function buildByCountryMap(advisories) {
 async function fetchAll() {
   const results = await Promise.allSettled(ADVISORY_FEEDS.map(fetchFeed));
   const all = [];
-  for (const r of results) {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
     if (r.status === 'fulfilled') all.push(...r.value);
+    else console.warn(`  Feed ${ADVISORY_FEEDS[i]?.name || i} failed: ${r.reason?.message || r.reason}`);
   }
 
   const seen = new Set();

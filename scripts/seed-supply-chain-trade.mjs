@@ -47,28 +47,32 @@ async function fetchShippingRates() {
 
   const indices = [];
   for (const cfg of SHIPPING_SERIES) {
-    const params = new URLSearchParams({
-      series_id: cfg.seriesId, api_key: apiKey, file_type: 'json',
-      frequency: cfg.frequency, sort_order: 'desc', limit: '24',
-    });
-    const resp = await fetch(`https://api.stlouisfed.org/fred/series/observations?${params}`, {
-      headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!resp.ok) { console.warn(`  FRED ${cfg.seriesId}: HTTP ${resp.status}`); continue; }
-    const data = await resp.json();
-    const observations = (data.observations || [])
-      .map(o => { const v = parseFloat(o.value); return isNaN(v) || o.value === '.' ? null : { date: o.date, value: v }; })
-      .filter(Boolean).reverse();
-    if (observations.length === 0) continue;
-    const current = observations[observations.length - 1].value;
-    const previous = observations.length > 1 ? observations[observations.length - 2].value : current;
-    const changePct = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
-    indices.push({
-      indexId: cfg.seriesId, name: cfg.name, currentValue: current, previousValue: previous,
-      changePct, unit: cfg.unit, history: observations, spikeAlert: detectSpike(observations),
-    });
-    await sleep(200);
+    try {
+      const params = new URLSearchParams({
+        series_id: cfg.seriesId, api_key: apiKey, file_type: 'json',
+        frequency: cfg.frequency, sort_order: 'desc', limit: '24',
+      });
+      const resp = await fetch(`https://api.stlouisfed.org/fred/series/observations?${params}`, {
+        headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!resp.ok) { console.warn(`  FRED ${cfg.seriesId}: HTTP ${resp.status}`); continue; }
+      const data = await resp.json();
+      const observations = (data.observations || [])
+        .map(o => { const v = parseFloat(o.value); return isNaN(v) || o.value === '.' ? null : { date: o.date, value: v }; })
+        .filter(Boolean).reverse();
+      if (observations.length === 0) continue;
+      const current = observations[observations.length - 1].value;
+      const previous = observations.length > 1 ? observations[observations.length - 2].value : current;
+      const changePct = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
+      indices.push({
+        indexId: cfg.seriesId, name: cfg.name, currentValue: current, previousValue: previous,
+        changePct, unit: cfg.unit, history: observations, spikeAlert: detectSpike(observations),
+      });
+      await sleep(200);
+    } catch (e) {
+      console.warn(`  FRED ${cfg.seriesId}: ${e.message}`);
+    }
   }
   console.log(`  Shipping rates: ${indices.length} indices`);
   return { indices, fetchedAt: new Date().toISOString(), upstreamUnavailable: false };
@@ -306,6 +310,12 @@ async function fetchAll() {
   const re = restrictions.status === 'fulfilled' ? restrictions.value : null;
   const fl = flows.status === 'fulfilled' ? flows.value : null;
   const ta = tariffs.status === 'fulfilled' ? tariffs.value : null;
+
+  if (shipping.status === 'rejected') console.warn(`  Shipping failed: ${shipping.reason?.message || shipping.reason}`);
+  if (barriers.status === 'rejected') console.warn(`  Barriers failed: ${barriers.reason?.message || barriers.reason}`);
+  if (restrictions.status === 'rejected') console.warn(`  Restrictions failed: ${restrictions.reason?.message || restrictions.reason}`);
+  if (flows.status === 'rejected') console.warn(`  Flows failed: ${flows.reason?.message || flows.reason}`);
+  if (tariffs.status === 'rejected') console.warn(`  Tariffs failed: ${tariffs.reason?.message || tariffs.reason}`);
 
   if (!sh && !ba && !re) throw new Error('All supply-chain/trade fetches failed');
 

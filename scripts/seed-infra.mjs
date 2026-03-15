@@ -55,6 +55,8 @@ async function main() {
     warmPing('Cable Health', '/api/infrastructure/v1/get-cable-health'),
   ]);
 
+  for (const r of results) { if (r.status === 'rejected') console.warn(`  Warm-ping failed: ${r.reason?.message || r.reason}`); }
+
   const ok = results.filter(r => r.status === 'fulfilled' && r.value).length;
   const total = results.length;
   const duration = Date.now() - start;

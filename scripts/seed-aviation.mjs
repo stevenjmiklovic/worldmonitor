@@ -249,6 +249,9 @@ async function fetchAll() {
   const opsData = ops.status === 'fulfilled' ? ops.value : null;
   const newsData = news.status === 'fulfilled' ? news.value : null;
 
+  if (ops.status === 'rejected') console.warn(`  AirportOps failed: ${ops.reason?.message || ops.reason}`);
+  if (news.status === 'rejected') console.warn(`  AviationNews failed: ${news.reason?.message || news.reason}`);
+
   if (!opsData && !newsData) throw new Error('All aviation fetches failed');
 
   // Write secondary keys BEFORE returning (runSeed calls process.exit after primary write)

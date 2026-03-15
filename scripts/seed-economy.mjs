@@ -112,24 +112,28 @@ async function fetchEnergyCapacity() {
 
   const series = [];
   for (const source of CAPACITY_SOURCES) {
-    let yearTotals;
-    if (source.code === 'COL') {
-      yearTotals = await fetchCapacityForSource('COL', apiKey, startYear);
-      if (yearTotals.size === 0) {
-        const merged = new Map();
-        for (const sub of COAL_SUBTYPES) {
-          const subMap = await fetchCapacityForSource(sub, apiKey, startYear);
-          for (const [year, mw] of subMap) merged.set(year, (merged.get(year) ?? 0) + mw);
+    try {
+      let yearTotals;
+      if (source.code === 'COL') {
+        yearTotals = await fetchCapacityForSource('COL', apiKey, startYear);
+        if (yearTotals.size === 0) {
+          const merged = new Map();
+          for (const sub of COAL_SUBTYPES) {
+            const subMap = await fetchCapacityForSource(sub, apiKey, startYear);
+            for (const [year, mw] of subMap) merged.set(year, (merged.get(year) ?? 0) + mw);
+          }
+          yearTotals = merged;
         }
-        yearTotals = merged;
+      } else {
+        yearTotals = await fetchCapacityForSource(source.code, apiKey, startYear);
       }
-    } else {
-      yearTotals = await fetchCapacityForSource(source.code, apiKey, startYear);
+      const data = Array.from(yearTotals.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([year, mw]) => ({ year, capacityMw: mw }));
+      series.push({ energySource: source.code, name: source.name, data });
+    } catch (e) {
+      console.warn(`  EIA ${source.code}: ${e.message}`);
     }
-    const data = Array.from(yearTotals.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([year, mw]) => ({ year, capacityMw: mw }));
-    series.push({ energySource: source.code, name: source.name, data });
   }
   console.log(`  Energy capacity: ${series.length} sources`);
   return { series };
@@ -370,6 +374,11 @@ async function fetchAll() {
   const ec = energyCapacity.status === 'fulfilled' ? energyCapacity.value : null;
   const fr = fredResults.status === 'fulfilled' ? fredResults.value : null;
   const ms = macroSignals.status === 'fulfilled' ? macroSignals.value : null;
+
+  if (energyPrices.status === 'rejected') console.warn(`  EnergyPrices failed: ${energyPrices.reason?.message || energyPrices.reason}`);
+  if (energyCapacity.status === 'rejected') console.warn(`  EnergyCapacity failed: ${energyCapacity.reason?.message || energyCapacity.reason}`);
+  if (fredResults.status === 'rejected') console.warn(`  FRED failed: ${fredResults.reason?.message || fredResults.reason}`);
+  if (macroSignals.status === 'rejected') console.warn(`  MacroSignals failed: ${macroSignals.reason?.message || macroSignals.reason}`);
 
   if (!ep && !fr && !ms) throw new Error('All economic fetches failed');
 

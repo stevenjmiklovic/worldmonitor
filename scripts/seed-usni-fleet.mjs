@@ -47,7 +47,8 @@ function fetchDirect(url) {
       stream.on('data', (c) => chunks.push(c));
       stream.on('end', () => {
         const body = Buffer.concat(chunks).toString();
-        if (body.trimStart().startsWith('<!DOCTYPE') || body.trimStart().startsWith('<html')) {
+        const trimmed = body.trimStart().toLowerCase();
+        if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
           reject(new Error('Cloudflare block (HTML response)'));
           return;
         }
@@ -88,7 +89,8 @@ function fetchViaHttpProxy(url, proxyAuth) {
         stream.on('data', (c) => chunks.push(c));
         stream.on('end', () => {
           const body = Buffer.concat(chunks).toString();
-          if (body.trimStart().startsWith('<!DOCTYPE') || body.trimStart().startsWith('<html')) {
+          const trimmed = body.trimStart().toLowerCase();
+          if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
             reject(new Error('Cloudflare block via proxy (HTML response)'));
             return;
           }
