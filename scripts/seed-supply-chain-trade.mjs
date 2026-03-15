@@ -233,7 +233,7 @@ async function fetchTradeRestrictions() {
 
   const restrictions = [...latestByCountry.values()].map(row => {
     const value = parseFloat(row.Value ?? row.value ?? '');
-    if (isNaN(value)) return null;
+    if (Number.isNaN(value)) return null;
     const cc = String(row.ReportingEconomyCode ?? '');
     const year = String(row.Year ?? row.year ?? '');
     return {
