@@ -3,7 +3,7 @@ name: Lint Code
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [sxs-main]
 
 jobs:
   biome:
