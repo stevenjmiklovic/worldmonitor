@@ -1367,6 +1367,14 @@ export type GameRegionId = 'northAmerica' | 'europe' | 'eastAsia' | 'southAsia' 
 /** Government type for each region – affects action outcomes (Shadow President). */
 export type GovernmentType = 'democracy' | 'autocracy' | 'monarchy' | 'theocracy' | 'communist' | 'militaryJunta';
 
+/** Leader personality type – layered modifier on top of government type. */
+export type LeaderPersonality = 'hawk' | 'dove' | 'reformist' | 'pragmatist' | 'nationalist' | 'populist';
+
+export interface GameLeader {
+  name: string;
+  personality: LeaderPersonality;
+}
+
 /** DEFCON nuclear-readiness levels (1 = nuclear war imminent, 5 = peacetime). */
 export type DefconLevel = 1 | 2 | 3 | 4 | 5;
 
@@ -1432,7 +1440,11 @@ export type GameActionType =
   | 'covertInfluence'
   | 'covertDestabilise'
   | 'cyberOperation'
-  | 'fundCoup';
+  | 'fundCoup'
+  // Tech-unlocked actions (available at Technology Level thresholds)
+  | 'satelliteSurveillance'
+  | 'aiDisinformation'
+  | 'cyberDeterrence';
 
 export interface GameAction {
   type: GameActionType;
@@ -1445,6 +1457,10 @@ export interface GameAction {
   risk: number;
   /** Approval impact if the action becomes public (covert ops risk exposure). */
   approvalImpact: number;
+  /** If true, action is not yet available (Technology Level too low). */
+  locked?: boolean;
+  /** Human-readable unlock requirement shown on locked actions. */
+  unlockRequirement?: string;
 }
 
 // -- Region state --------------------------------------------------------------
@@ -1459,6 +1475,8 @@ export interface GameRegionState {
   nuclearCapable: boolean;
   sanctioned: boolean;
   troopsDeployed: boolean;
+  /** Current leader — personality modifies how actions land in this region. */
+  leader: GameLeader;
 }
 
 // -- Events --------------------------------------------------------------------
@@ -1475,6 +1493,16 @@ export interface GameEvent {
   defconDelta?: number;
   /** If present, advisor briefings generated alongside this event. */
   advisorBriefings?: AdvisorBriefing[];
+  /** Turns remaining before this crisis auto-resolves at 1.5× impact. */
+  deadline?: number;
+  /** True if the deadline expired and the event was auto-resolved. */
+  autoResolved?: boolean;
+  /** True if this event is a diplomatic reaction from a third-party region. */
+  isReaction?: boolean;
+  /** The region that generated this reaction event. */
+  reactingRegion?: GameRegionId;
+  /** True if this event was triggered by a preceding event chain. */
+  isChained?: boolean;
 }
 
 // -- Phases & objectives -------------------------------------------------------
@@ -1504,4 +1532,8 @@ export interface GameState {
   /** DEFCON level 5 (peace) → 1 (nuclear war). Reaching 1 ends the game. */
   defcon: DefconLevel;
   advisors: GameAdvisor[];
+  /** Crisis events with active deadlines awaiting player response. */
+  pendingEvents: GameEvent[];
+  /** Chain events scheduled to fire on a future turn. */
+  pendingChainEvents: Array<{ templateId: string; triggerTurn: number; originRegion: GameRegionId }>;
 }

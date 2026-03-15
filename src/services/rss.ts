@@ -1,7 +1,10 @@
 import type { Feed, NewsItem } from '@/types';
 import { SITE_VARIANT } from '@/config';
 import { chunkArray, fetchWithProxy } from '@/utils';
+import { logger } from '@/lib/logger';
 import { classifyByKeyword, classifyWithAI } from './threat-classifier';
+
+const rssLogger = logger.child({ module: 'RSS' });
 import { inferGeoHubsFromTitle } from './geo-hub-index';
 import { getPersistentCache, setPersistentCache } from './persistent-cache';
 import { dataFreshness } from './data-freshness';
@@ -103,7 +106,7 @@ function recordFeedFailure(feedScope: string): void {
   if (state.count >= MAX_FAILURES) {
     state.cooldownUntil = Date.now() + FEED_COOLDOWN_MS;
     const { feedName, lang } = parseFeedScope(feedScope);
-    console.warn(`[RSS] ${feedName} (${lang}) on cooldown for 5 minutes after ${state.count} failures`);
+    rssLogger.warn('Feed on cooldown after repeated failures', { feedName, lang, failures: state.count, cooldownMinutes: 5 });
   }
   feedFailures.set(feedScope, state);
 }
@@ -229,7 +232,7 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
 
     const parseError = doc.querySelector('parsererror');
     if (parseError) {
-      console.warn(`Parse error for ${feed.name}`);
+      rssLogger.warn('Parse error', { feedName: feed.name });
       recordFeedFailure(feedScope);
       const persistent = await loadPersistentFeed(feedScope);
       return cached?.items || persistent || [];
@@ -310,7 +313,7 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
 
     return parsed;
   } catch (e) {
-    console.error(`Failed to fetch ${feed.name}:`, e);
+    rssLogger.error('Failed to fetch feed', e instanceof Error ? e : undefined, { feedName: feed.name });
     recordFeedFailure(feedScope);
     const persistent = await loadPersistentFeed(feedScope);
     return cached?.items || persistent || [];

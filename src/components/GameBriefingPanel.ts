@@ -9,7 +9,7 @@
 
 import { Panel } from './Panel';
 import { h } from '@/utils/dom-utils';
-import type { GameState, GameRegionId, GameRegionState, GovernmentType } from '@/types';
+import type { GameState, GameRegionId, GameRegionState, GovernmentType, LeaderPersonality } from '@/types';
 
 const GOV_LABELS: Record<GovernmentType, string> = {
   democracy:     '🗳️ Democracy',
@@ -18,6 +18,15 @@ const GOV_LABELS: Record<GovernmentType, string> = {
   theocracy:     '🕌 Theocracy',
   communist:     '☭ Communist',
   militaryJunta: '🎖️ Junta',
+};
+
+const PERSONALITY_COLORS: Record<LeaderPersonality, string> = {
+  hawk:        '#ff6644',
+  dove:        '#44ccff',
+  reformist:   '#44ff88',
+  pragmatist:  '#aaaaaa',
+  nationalist: '#ffaa44',
+  populist:    '#cc88ff',
 };
 
 export class GameBriefingPanel extends Panel {
@@ -38,7 +47,8 @@ export class GameBriefingPanel extends Panel {
     const thead = h('thead');
     const headRow = h('tr');
     const colHeaders: [string, string][] = [
-      ['Region', 'Region name'], ['Gov', 'Government type'], ['Inf', 'Influence (−100 hostile to 100 allied)'],
+      ['Region', 'Region name'], ['Gov', 'Government type'], ['Leader', 'Current leader and personality'],
+      ['Inf', 'Influence (−100 hostile to 100 allied)'],
       ['Stab', 'Stability (0–100)'], ['Threat', 'Threat level (0–100)'], ['Status', 'Status flags'],
     ];
     for (const [label, fullLabel] of colHeaders) {
@@ -59,6 +69,19 @@ export class GameBriefingPanel extends Panel {
 
       const nameCell = h('td', { style: 'padding:3px 5px;white-space:nowrap' }, region.name);
       const govCell  = h('td', { style: 'padding:3px 5px;font-size:0.85em' }, GOV_LABELS[region.governmentType] ?? region.governmentType);
+
+      // Leader column with personality pill
+      const personality = region.leader.personality;
+      const personalityColor = PERSONALITY_COLORS[personality] ?? '#888';
+      const leaderCell = h('td', { style: 'padding:3px 5px;font-size:0.82em;white-space:nowrap' });
+      leaderCell.append(
+        h('span', null, region.leader.name + ' '),
+        h('span', {
+          style: `font-size:0.78em;padding:1px 4px;border-radius:3px;background:${personalityColor}22;color:${personalityColor};font-weight:600`,
+          title: `Leader personality: ${personality}`,
+        }, personality),
+      );
+
       const infCell  = h('td', { style: `padding:3px 5px;font-weight:600;color:${colorForValue(region.influence, -100, 100)}` }, String(region.influence));
       const stabCell = h('td', { style: `padding:3px 5px;font-weight:600;color:${colorForValue(region.stability, 0, 100)}` }, String(region.stability));
       const threatLabel = `${region.threatLevel}${isHotspot ? ' 🔥' : ''}`;
@@ -70,16 +93,40 @@ export class GameBriefingPanel extends Panel {
       if (region.troopsDeployed) badges.push('🪖');
       const statusCell = h('td', { style: 'padding:3px 5px;font-size:0.9em' }, badges.join(' ') || '—');
 
-      tr.append(nameCell, govCell, infCell, stabCell, thrCell, statusCell);
+      tr.append(nameCell, govCell, leaderCell, infCell, stabCell, thrCell, statusCell);
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
     this.bodyEl.appendChild(table);
 
-    // Legend
+    // Status legend
     const legend = h('div', { style: 'margin-top:6px;font-size:0.8em;opacity:0.6' },
       '☢️ Nuclear  🚫 Sanctioned  🪖 Troops Deployed');
     this.bodyEl.appendChild(legend);
+
+    // Personality legend
+    const personalities: [string, string][] = [
+      ['hawk', '#ff6644'], ['dove', '#44ccff'], ['reformist', '#44ff88'],
+      ['pragmatist', '#aaaaaa'], ['nationalist', '#ffaa44'], ['populist', '#cc88ff'],
+    ];
+    const personalityDescriptions: Record<string, string> = {
+      hawk: 'Military/covert favoured',
+      dove: 'Diplomatic/economic favoured',
+      reformist: 'Diplomatic/economic receptive',
+      pragmatist: 'Balanced (no modifier)',
+      nationalist: 'Military receptive, resists diplomacy',
+      populist: 'Economic/diplomatic receptive',
+    };
+    const personalityLegend = h('div', { style: 'margin-top:4px;font-size:0.78em;opacity:0.55;display:flex;flex-wrap:wrap;gap:4px 10px' });
+    for (const [name, color] of personalities) {
+      const item = h('span', { title: personalityDescriptions[name] ?? '' });
+      item.append(
+        h('span', { style: `display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:3px;vertical-align:middle` }),
+        document.createTextNode(name),
+      );
+      personalityLegend.appendChild(item);
+    }
+    this.bodyEl.appendChild(personalityLegend);
   }
 }
 

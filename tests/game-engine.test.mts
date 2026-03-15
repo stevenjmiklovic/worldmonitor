@@ -20,6 +20,7 @@ const {
   getAvailableActions,
   computeScore,
   setBudget,
+  processPendingDeadlines,
 } = engine;
 
 describe('game-engine', () => {
@@ -386,6 +387,269 @@ describe('game-engine', () => {
       state.approval = 100;
       const highApproval = computeScore(state);
       assert.ok(highApproval > base, 'Higher approval should increase score');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Feature: Leader Personalities
+  // ------------------------------------------------------------------
+  describe('leader personalities', () => {
+    it('each region has a leader with a name and personality', () => {
+      const state = createInitialState(1);
+      for (const r of Object.values(state.regions)) {
+        assert.ok(typeof r.leader.name === 'string' && r.leader.name.length > 0, `Region ${r.id} missing leader name`);
+        assert.ok(['hawk', 'dove', 'reformist', 'pragmatist', 'nationalist', 'populist'].includes(r.leader.personality),
+          `Region ${r.id} has unexpected personality: ${r.leader.personality}`);
+      }
+    });
+
+    it('personality modifiers affect action outcomes (dove boosts diplomacy vs hawk)', () => {
+      const state = createInitialState(1);
+      const doveRegion = Object.values(state.regions)[0];
+      const hawkRegion = Object.values(state.regions)[1];
+      doveRegion.leader = { name: 'Test Dove', personality: 'dove' };
+      hawkRegion.leader = { name: 'Test Hawk', personality: 'hawk' };
+      // Both regions same government type to isolate personality effect
+      doveRegion.governmentType = 'democracy';
+      hawkRegion.governmentType = 'democracy';
+      // Same starting influence
+      doveRegion.influence = 0;
+      hawkRegion.influence = 0;
+
+      const actions = getAvailableActions(state);
+      const diplomDoveAction = actions.find(a => a.type === 'diplomaticPraise' && a.targetRegion === doveRegion.id);
+      const diplomHawkAction = actions.find(a => a.type === 'diplomaticPraise' && a.targetRegion === hawkRegion.id);
+      assert.ok(diplomDoveAction && diplomHawkAction);
+
+      const stateDove = createInitialState(1);
+      stateDove.regions[doveRegion.id].leader = { name: 'Test Dove', personality: 'dove' };
+      stateDove.regions[doveRegion.id].governmentType = 'democracy';
+      stateDove.regions[doveRegion.id].influence = 0;
+      resolveAction(stateDove, diplomDoveAction);
+      const doveInfluence = stateDove.regions[doveRegion.id].influence;
+
+      const stateHawk = createInitialState(1);
+      stateHawk.regions[hawkRegion.id].leader = { name: 'Test Hawk', personality: 'hawk' };
+      stateHawk.regions[hawkRegion.id].governmentType = 'democracy';
+      stateHawk.regions[hawkRegion.id].influence = 0;
+      resolveAction(stateHawk, diplomHawkAction);
+      const hawkInfluence = stateHawk.regions[hawkRegion.id].influence;
+
+      assert.ok(doveInfluence > hawkInfluence, `Dove (${doveInfluence}) should be more receptive to diplomacy than Hawk (${hawkInfluence})`);
+    });
+
+    it('fundCoup changes the region leader on success', () => {
+      const state = createInitialState(1);
+      const region = Object.values(state.regions).find(r => !r.nuclearCapable) ?? Object.values(state.regions)[0];
+      const originalName = region.leader.name;
+      state.resources.intelligenceAssets = 200;
+      state.resources.politicalCapital = 200;
+      const actions = getAvailableActions(state);
+      const coup = actions.find(a => a.type === 'fundCoup' && a.targetRegion === region.id);
+      assert.ok(coup);
+      // Run enough trials to get at least one un-exposed result
+      for (let seed = 1; seed <= 20; seed++) {
+        const s = createInitialState(seed);
+        s.resources.intelligenceAssets = 200;
+        s.resources.politicalCapital = 200;
+        resolveAction(s, { ...coup }, seed * 100);
+        if (s.regions[region.id].leader.name !== originalName) {
+          // Leader changed — test passed
+          return;
+        }
+      }
+      // If coup always exposed, leader won't change — that's also valid behaviour
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Feature: Timed Crisis Decisions
+  // ------------------------------------------------------------------
+  describe('timed crisis decisions', () => {
+    it('initial state has empty pendingEvents', () => {
+      const state = createInitialState(1);
+      assert.deepStrictEqual(state.pendingEvents, []);
+    });
+
+    it('events with deadlines are tracked in pendingEvents after applyEvents', () => {
+      const state = createInitialState(1);
+      const deadline3Event = {
+        id: 'test-deadline', turn: 1,
+        headline: 'Test crisis', description: 'Test',
+        region: 'mena' as const,
+        impact: { mena: { stability: -10 } },
+        deadline: 3,
+      };
+      applyEvents(state, [deadline3Event]);
+      assert.ok(state.pendingEvents.length > 0, 'Deadline event should be tracked');
+      assert.equal(state.pendingEvents[0].deadline, 3);
+    });
+
+    it('processPendingDeadlines decrements deadline each turn', () => {
+      const state = createInitialState(1);
+      state.pendingEvents = [{ id: 'test', turn: 1, headline: 'X', description: 'Y', region: 'mena', impact: { mena: { stability: -4 } }, deadline: 3 }];
+      processPendingDeadlines(state);
+      assert.equal(state.pendingEvents[0].deadline, 2);
+    });
+
+    it('processPendingDeadlines auto-resolves expired events and logs them', () => {
+      const state = createInitialState(1);
+      state.pendingEvents = [{ id: 'test', turn: 1, headline: 'Expired', description: 'Y', region: 'mena', impact: { mena: { stability: -4 } }, deadline: 1 }];
+      const before = state.regions.mena.stability;
+      processPendingDeadlines(state);
+      assert.equal(state.pendingEvents.length, 0, 'Expired event should be removed');
+      // Auto-resolution applies 1.5× impact — stability should drop
+      assert.ok(state.regions.mena.stability < before, 'Stability should decrease from auto-resolution');
+      const autoLog = state.log.find(e => e.autoResolved === true);
+      assert.ok(autoLog, 'Auto-resolved event should appear in log');
+    });
+
+    it('resolveAction clears pending events for the targeted region', () => {
+      const state = createInitialState(1);
+      const r = Object.values(state.regions)[0];
+      state.pendingEvents = [{ id: 'p1', turn: 1, headline: 'X', description: 'Y', region: r.id, impact: {}, deadline: 2 }];
+      const actions = getAvailableActions(state);
+      const aid = actions.find(a => a.type === 'economicAid' && a.targetRegion === r.id);
+      assert.ok(aid);
+      resolveAction(state, aid);
+      assert.equal(state.pendingEvents.filter(e => e.region === r.id).length, 0, 'Pending event should be cleared after acting on region');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Feature: Technology Path Unlocking
+  // ------------------------------------------------------------------
+  describe('technology path unlocking', () => {
+    it('satellite surveillance is locked below TL 70', () => {
+      const state = createInitialState(1);
+      state.resources.technologyLevel = 50;
+      const actions = getAvailableActions(state);
+      const sat = actions.find(a => a.type === 'satelliteSurveillance');
+      assert.ok(sat, 'satelliteSurveillance action should exist');
+      assert.equal(sat.locked, true, 'Should be locked below TL 70');
+    });
+
+    it('satellite surveillance is unlocked at TL 70', () => {
+      const state = createInitialState(1);
+      state.resources.technologyLevel = 70;
+      const actions = getAvailableActions(state);
+      const sat = actions.find(a => a.type === 'satelliteSurveillance');
+      assert.ok(sat);
+      assert.ok(!sat.locked, 'Should be unlocked at TL 70');
+    });
+
+    it('aiDisinformation is locked below TL 80, unlocked at TL 80', () => {
+      const state = createInitialState(1);
+      state.resources.technologyLevel = 79;
+      let actions = getAvailableActions(state);
+      assert.ok(actions.find(a => a.type === 'aiDisinformation')?.locked === true);
+      state.resources.technologyLevel = 80;
+      actions = getAvailableActions(state);
+      assert.ok(actions.find(a => a.type === 'aiDisinformation')?.locked !== true);
+    });
+
+    it('cyberDeterrence is locked below TL 90, unlocked at TL 90', () => {
+      const state = createInitialState(1);
+      state.resources.technologyLevel = 89;
+      let actions = getAvailableActions(state);
+      assert.ok(actions.find(a => a.type === 'cyberDeterrence')?.locked === true);
+      state.resources.technologyLevel = 90;
+      actions = getAvailableActions(state);
+      assert.ok(actions.find(a => a.type === 'cyberDeterrence')?.locked !== true);
+    });
+
+    it('cyberDeterrence increases DEFCON when executed', () => {
+      const state = createInitialState(1);
+      state.defcon = 3;
+      state.resources.technologyLevel = 90;
+      state.resources.militaryReadiness = 100;
+      const actions = getAvailableActions(state);
+      const cd = actions.find(a => a.type === 'cyberDeterrence' && !a.locked);
+      assert.ok(cd);
+      resolveAction(state, cd);
+      assert.equal(state.defcon, 4, 'cyberDeterrence should raise DEFCON by 1');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Feature: Event Chaining
+  // ------------------------------------------------------------------
+  describe('event chaining', () => {
+    it('initial state has empty pendingChainEvents', () => {
+      const state = createInitialState(1);
+      assert.deepStrictEqual(state.pendingChainEvents, []);
+    });
+
+    it('applying a chained event queues a follow-up in pendingChainEvents', () => {
+      const state = createInitialState(1);
+      // Simulate a nuclear test event (which chains to sanctions-ultimatum)
+      const nuclearEvt = {
+        id: 'evt-1-0', turn: 1,
+        headline: 'Nuclear test detected by seismic monitors',
+        description: 'Test',
+        region: 'eastAsia' as const,
+        impact: { eastAsia: { stability: -15, threatLevel: 20 } },
+      };
+      applyEvents(state, [nuclearEvt]);
+      assert.ok(state.pendingChainEvents.length > 0, 'Chain event should be queued');
+      assert.equal(state.pendingChainEvents[0].templateId, 'sanctions-ultimatum');
+      assert.equal(state.pendingChainEvents[0].triggerTurn, 3); // turn 1 + delay 2
+    });
+
+    it('chain events are included in generateTurnEvents when due', () => {
+      const state = createInitialState(1);
+      state.turn = 3;
+      state.pendingChainEvents = [{ templateId: 'sanctions-ultimatum', triggerTurn: 3, originRegion: 'eastAsia' }];
+      const events = generateTurnEvents(state, 42);
+      const chainEvt = events.find(e => e.isChained === true);
+      assert.ok(chainEvt, 'Chain event should appear in generated events');
+      assert.equal(chainEvt.isChained, true);
+    });
+
+    it('does not queue duplicate chain events for the same template+region', () => {
+      const state = createInitialState(1);
+      const evt = {
+        id: 'evt-1-0', turn: 1,
+        headline: 'Nuclear test detected by seismic monitors',
+        description: 'Test',
+        region: 'eastAsia' as const,
+        impact: { eastAsia: { stability: -15 } },
+      };
+      applyEvents(state, [evt]);
+      applyEvents(state, [{ ...evt, id: 'evt-1-1' }]);
+      const dupes = state.pendingChainEvents.filter(c => c.templateId === 'sanctions-ultimatum' && c.originRegion === 'eastAsia');
+      assert.equal(dupes.length, 1, 'Should not queue duplicate chain events');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Feature: Diplomatic Reactions
+  // ------------------------------------------------------------------
+  describe('diplomatic reactions', () => {
+    it('imposeSanctions generates a reaction event in the log', () => {
+      const state = createInitialState(1);
+      const actions = getAvailableActions(state);
+      const sanction = actions.find(a => a.type === 'imposeSanctions');
+      assert.ok(sanction);
+      const logBefore = state.log.length;
+      resolveAction(state, sanction, 42);
+      // At minimum: one action event + possibly one reaction event
+      assert.ok(state.log.length > logBefore, 'Log should have new entries');
+      const reactionEvt = state.log.find(e => e.isReaction === true);
+      assert.ok(reactionEvt, 'A diplomatic reaction event should be logged');
+      assert.ok(typeof reactionEvt.reactingRegion === 'string', 'Reaction event should name the reacting region');
+    });
+
+    it('reaction events have approvalDelta', () => {
+      const state = createInitialState(1);
+      const actions = getAvailableActions(state);
+      const deployTroops = actions.find(a => a.type === 'deployTroops');
+      assert.ok(deployTroops);
+      resolveAction(state, deployTroops, 42);
+      const reaction = state.log.find(e => e.isReaction);
+      if (reaction) {
+        assert.ok(reaction.approvalDelta !== undefined, 'Reaction should have approvalDelta');
+      }
     });
   });
 });

@@ -5,6 +5,9 @@
 
 import { detectMLCapabilities, type MLCapabilities } from './ml-capabilities';
 import { ML_THRESHOLDS, MODEL_CONFIGS } from '@/config/ml-config';
+import { logger } from '@/lib/logger';
+
+const mlWorkerLogger = logger.child({ module: 'MLWorker' });
 
 // Import worker using Vite's worker syntax
 import MLWorkerClass from '@/workers/ml.worker?worker';
@@ -88,7 +91,7 @@ class MLWorkerManager {
     return new Promise((resolve) => {
       const readyTimeout = setTimeout(() => {
         if (!this.isReady) {
-          console.error('[MLWorker] Worker failed to become ready');
+          mlWorkerLogger.error('Worker failed to become ready');
           this.cleanup();
           resolve(false);
         }
@@ -97,7 +100,7 @@ class MLWorkerManager {
       try {
         this.worker = new MLWorkerClass();
       } catch (error) {
-        console.error('[MLWorker] Failed to create worker:', error);
+        mlWorkerLogger.error('Failed to create worker', error instanceof Error ? error : undefined);
         this.cleanup();
         resolve(false);
         return;
@@ -133,7 +136,7 @@ class MLWorkerManager {
             this.pendingRequests.delete(data.id!);
             pending.reject(new Error(data.error));
           } else {
-            console.error('[MLWorker] Error:', data.error);
+            mlWorkerLogger.error('Error', { error: data.error });
           }
           return;
         }
@@ -176,7 +179,7 @@ class MLWorkerManager {
       };
 
       this.worker.onerror = (error) => {
-        console.error('[MLWorker] Error:', error);
+        mlWorkerLogger.error('Error', error instanceof Error ? error : undefined);
 
         if (!this.isReady) {
           clearTimeout(readyTimeout);

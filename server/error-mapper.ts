@@ -8,6 +8,8 @@
  * - Unknown errors -- 500 Internal Server Error
  */
 
+import { getRequestLogger } from '../src/lib/logger';
+
 /**
  * Detects network/fetch errors across runtimes. Per Fetch spec, network
  * errors throw TypeError. We also check common error message patterns
@@ -29,7 +31,8 @@ function isNetworkError(error: unknown): boolean {
  * Matches the `ServerOptions.onError` signature:
  *   (error: unknown, req: Request) => Response | Promise<Response>
  */
-export function mapErrorToResponse(error: unknown, _req: Request): Response {
+export function mapErrorToResponse(error: unknown, req: Request): Response {
+  const reqLogger = getRequestLogger(req);
   // ApiError: has statusCode property (e.g., upstream returns 429, 403, etc.)
   if (error instanceof Error && 'statusCode' in error) {
     const statusCode = (error as Error & { statusCode: number }).statusCode;
@@ -48,7 +51,7 @@ export function mapErrorToResponse(error: unknown, _req: Request): Response {
     if (statusCode >= 500) {
       // Log upstream response body (truncated) for debugging (M-4 fix)
       const apiBody = 'body' in error ? String((error as any).body).slice(0, 500) : '';
-      console.error(`[error-mapper] ${statusCode}:`, error.message, apiBody ? `| body: ${apiBody}` : '');
+      reqLogger.error('Upstream error', error instanceof Error ? error : new Error(String(error)), { statusCode, upstreamBody: apiBody });
     }
 
     return new Response(JSON.stringify(body), {
@@ -67,7 +70,7 @@ export function mapErrorToResponse(error: unknown, _req: Request): Response {
 
   // Network/fetch errors: upstream is unreachable (M-5 fix: runtime-agnostic detection)
   if (isNetworkError(error)) {
-    console.error('[error-mapper] Network error (502):', (error as Error).message);
+    reqLogger.error('Network error', error instanceof Error ? error : new Error(String(error)), { statusCode: 502 });
     return new Response(JSON.stringify({ message: 'Upstream unavailable' }), {
       status: 502,
       headers: { 'Content-Type': 'application/json' },
@@ -75,7 +78,7 @@ export function mapErrorToResponse(error: unknown, _req: Request): Response {
   }
 
   // Catch-all: 500 Internal Server Error
-  console.error('[error-mapper] Unhandled error:', error instanceof Error ? error.message : error);
+  reqLogger.error('Unhandled error', error instanceof Error ? error : new Error(String(error)));
   return new Response(JSON.stringify({ message: 'Internal server error' }), {
     status: 500,
     headers: { 'Content-Type': 'application/json' },

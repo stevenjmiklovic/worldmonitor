@@ -8,6 +8,7 @@
  */
 
 import { mlWorker } from './ml-worker';
+import { logger } from '@/lib/logger';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { SITE_VARIANT } from '@/config';
 import { BETA_MODE } from '@/config/beta';
@@ -35,6 +36,8 @@ export interface SummarizeOptions {
 }
 
 // ── Sebuf client (replaces direct fetch to /api/{provider}-summarize) ──
+
+const summarizationLogger = logger.child({ module: 'Summarization' });
 
 const newsClient = new NewsServiceClient(getRpcBaseUrl(), { fetch: (...args) => globalThis.fetch(...args) });
 const summaryBreaker = createCircuitBreaker<SummarizeArticleResponse>({ name: 'News Summarization', cacheTtlMs: 0 });
@@ -94,7 +97,7 @@ async function tryApiProvider(
       cached,
     };
   } catch (error) {
-    console.warn(`[Summarization] ${providerDef.label} failed:`, error);
+    summarizationLogger.warn(`${providerDef.label} failed`, error instanceof Error ? error : undefined);
     return null;
   }
 }
@@ -127,7 +130,7 @@ async function tryBrowserT5(headlines: string[], modelId?: string): Promise<Summ
       cached: false,
     };
   } catch (error) {
-    console.warn('[Summarization] Browser T5 failed:', error);
+    summarizationLogger.warn('Browser T5 failed', error instanceof Error ? error : undefined);
     return null;
   }
 }
@@ -244,7 +247,7 @@ async function generateSummaryInternal(
       onProgress?.(totalSteps, totalSteps, 'No providers available');
     }
 
-    console.warn('[BETA] All providers failed');
+    summarizationLogger.warn('All providers failed', { mode: 'beta' });
     return null;
   }
 
@@ -263,7 +266,7 @@ async function generateSummaryInternal(
     if (browserResult) return browserResult;
   }
 
-  console.warn('[Summarization] All providers failed');
+  summarizationLogger.warn('All providers failed');
   return null;
 }
 

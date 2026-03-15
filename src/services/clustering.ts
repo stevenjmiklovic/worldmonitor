@@ -9,6 +9,9 @@ import { getSourceTier } from '@/config';
 import { clusterNewsCore } from './analysis-core';
 import { mlWorker } from './ml-worker';
 import { ML_THRESHOLDS } from '@/config/ml-config';
+import { logger } from '@/lib/logger';
+
+const clusteringLogger = logger.child({ module: 'Clustering' });
 
 export function clusterNews(items: NewsItem[]): ClusteredEvent[] {
   return clusterNewsCore(items, getSourceTier) as ClusteredEvent[];
@@ -42,7 +45,7 @@ export async function clusterNewsHybrid(items: NewsItem[]): Promise<ClusteredEve
     // Merge semantically similar clusters
     return mergeSemanticallySimilarClusters(jaccardClusters, semanticGroups);
   } catch (error) {
-    console.warn('[Clustering] Semantic clustering failed, using Jaccard only:', error);
+    clusteringLogger.warn('Semantic clustering failed, using Jaccard only', error instanceof Error ? error : undefined);
     return jaccardClusters;
   }
 }

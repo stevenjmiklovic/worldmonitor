@@ -7,7 +7,19 @@
 
 import { Panel } from './Panel';
 import { h } from '@/utils/dom-utils';
-import type { GameState } from '@/types';
+import type { GameState, GameRegionId } from '@/types';
+
+const REGION_SHORT: Record<GameRegionId, string> = {
+  northAmerica:     'N. America',
+  europe:           'Europe',
+  eastAsia:         'East Asia',
+  southAsia:        'S. Asia',
+  mena:             'MENA',
+  subSaharanAfrica: 'Sub-Saharan',
+  latam:            'Lat. Am.',
+  centralAsia:      'C. Asia',
+  oceania:          'Oceania',
+};
 
 export class GameLogPanel extends Panel {
   private bodyEl!: HTMLElement;
@@ -23,10 +35,23 @@ export class GameLogPanel extends Panel {
 
     const reversed = [...state.log].reverse();
     for (const evt of reversed) {
-      const isAction = evt.id.startsWith('act-');
-      const isAi     = evt.id.startsWith('ai-');
-      const borderColor = isAction ? 'var(--accent,#4488ff)' : isAi ? '#44ccff' : '#ffcc44';
-      const icon        = isAction ? '⚡' : isAi ? '🤖' : '🌍';
+      const isAction     = evt.id.startsWith('act-');
+      const isAi         = evt.id.startsWith('ai-');
+      const isReaction   = evt.isReaction === true;
+      const isChained    = evt.isChained === true;
+      const isAutoResolved = evt.autoResolved === true;
+      const borderColor = isAutoResolved ? '#ff3333'
+        : isAction    ? 'var(--accent,#4488ff)'
+        : isReaction  ? '#ffaa44'
+        : isChained   ? '#cc88ff'
+        : isAi        ? '#44ccff'
+        : '#ffcc44';
+      const icon = isAutoResolved ? '⚠️'
+        : isAction   ? '⚡'
+        : isReaction ? '↩'
+        : isChained  ? '↳'
+        : isAi       ? '🤖'
+        : '🌍';
       const card = h('div', {
         style: `padding:5px 8px;margin-bottom:4px;border-radius:4px;border-left:3px solid ${borderColor};background:var(--panel-bg,#1a1a2e)`,
       });
@@ -35,7 +60,7 @@ export class GameLogPanel extends Panel {
       const metaLeft = h('span', null, `${icon} Turn ${evt.turn}`);
       const regionPill = h('span', {
         style: `font-size:0.8em;padding:1px 5px;border-radius:3px;background:${borderColor}22;color:${borderColor}`,
-      }, evt.region);
+      }, REGION_SHORT[evt.region as GameRegionId] ?? evt.region);
       metaRow.append(metaLeft, regionPill);
 
       const headline = h('div', { style: 'font-weight:600' }, evt.headline);

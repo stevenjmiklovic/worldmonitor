@@ -87,7 +87,8 @@ export class GameHudPanel extends Panel {
   private actionsEl!: HTMLElement;
   private scoreEl!: HTMLElement;
 
-  private pendingEvents: GameEvent[] = [];
+  /** Current turn's world events shown in the briefing. */
+  private currentEvents: GameEvent[] = [];
   /** Incremented each time startBriefing() is called; guards against stale async results. */
   private briefingGenId = 0;
   /** Score at the start of the current turn, used to show per-turn delta. */
@@ -149,7 +150,11 @@ export class GameHudPanel extends Panel {
 
   private async startBriefing(): Promise<void> {
     const myId = ++this.briefingGenId;
-    this.turnStartScore = this.state.score;
+    // Capture score at start of briefing generation (after events are applied it may change)
+    // On turn 1 the pre-event score is 0 which would produce a misleading delta, so we
+    // update turnStartScore after the first render instead.
+    const isFirstTurn = this.state.turn === 1 && this.state.score === 0;
+    if (!isFirstTurn) this.turnStartScore = this.state.score;
 
     // Show a loading placeholder immediately while the AI call is in flight.
     this.actionsEl.innerHTML = '';
@@ -166,10 +171,12 @@ export class GameHudPanel extends Panel {
     }
     if (myId !== this.briefingGenId) return; // a newer briefing superseded this one
 
-    this.pendingEvents = events?.length ? events : generateTurnEvents(this.state);
-    attachAdvisorBriefings(this.state, this.pendingEvents);
-    applyEvents(this.state, this.pendingEvents);
+    this.currentEvents = events?.length ? events : generateTurnEvents(this.state);
+    attachAdvisorBriefings(this.state, this.currentEvents);
+    applyEvents(this.state, this.currentEvents);
     this.state.score = computeScore(this.state);
+    // After first-turn events are applied, anchor the score baseline so the delta shows 0
+    if (isFirstTurn) this.turnStartScore = this.state.score;
     this.render();
     this.notify();
   }
@@ -205,7 +212,7 @@ export class GameHudPanel extends Panel {
 
   private restart(): void {
     this.state = createInitialState();
-    this.pendingEvents = [];
+    this.currentEvents = [];
     void this.startBriefing();
   }
 
@@ -255,7 +262,7 @@ export class GameHudPanel extends Panel {
       const barClr = pct > 50 ? '#44ff88' : pct > 25 ? '#ffcc44' : '#ff5555';
       const wrap = h('div', { style: 'margin-bottom:3px' });
       const row = h('div', { style: 'display:flex;justify-content:space-between' });
-      row.append(h('span', null, label), h('span', { style: 'font-weight:600' }, String(val)));
+      row.append(h('span', null, label), h('span', { style: 'font-weight:600' }, `${val}`), h('span', { style: 'opacity:0.35;font-size:0.8em' }, '/200'));
       const bar = h('div', { style: `height:2px;background:${barClr};width:${pct}%;border-radius:1px;transition:width 0.4s,background 0.4s;margin-top:1px;opacity:0.8` });
       wrap.append(row, bar);
       this.resourcesEl.appendChild(wrap);
@@ -310,9 +317,12 @@ export class GameHudPanel extends Panel {
       'aria-label': 'Balance budget to 100',
     }, 'Balance');
 
-    const header = h('div', { style: 'font-weight:600;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;gap:6px' },
-      'Budget Allocation', totalEl, balanceBtn);
-    this.budgetEl.appendChild(header);
+    // Wrap in <details> so it can be collapsed
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.style.cssText = 'cursor:pointer;font-weight:600;font-size:0.9em;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:6px;padding:2px 0';
+    summary.append(document.createTextNode('Budget Allocation'), totalEl, balanceBtn);
+    details.appendChild(summary);
 
     const labels: Record<keyof GameBudget, string> = {
       defense: '🛡️ Defense', intelligence: '🕵️ Intelligence', diplomacy: '🤝 Diplomacy',
@@ -323,7 +333,7 @@ export class GameHudPanel extends Panel {
       economy: 'Economy', technology: 'Technology',
     };
 
-    const grid = h('div', { style: 'display:grid;grid-template-columns:auto 50px 1fr;gap:2px 8px;align-items:center' });
+    const grid = h('div', { style: 'display:grid;grid-template-columns:auto 50px 1fr;gap:2px 8px;align-items:center;margin-top:4px' });
     const inputs: Record<string, HTMLInputElement> = {};
     const valSpans: Record<string, HTMLElement> = {};
 
@@ -376,7 +386,8 @@ export class GameHudPanel extends Panel {
       syncTotal();
     });
 
-    this.budgetEl.appendChild(grid);
+    details.appendChild(grid);
+    this.budgetEl.appendChild(details);
   }
 
   private tryApplyBudget(keys: (keyof GameBudget)[], inputs: Record<string, HTMLInputElement>): number {
@@ -394,56 +405,98 @@ export class GameHudPanel extends Panel {
     const label = h('div', { style: 'font-weight:600;margin-bottom:4px;font-size:1.05em' }, '📋 Intelligence Briefing');
     this.actionsEl.appendChild(label);
 
-    for (const evt of this.pendingEvents) {
-      const isAi = evt.id.startsWith('ai-');
-      const accentClr = isAi ? '#44ccff' : '#ffcc44';
-      const card = h('div', { style: `background:var(--panel-bg,#1a1a2e);padding:6px 8px;border-radius:4px;margin-bottom:6px;font-size:0.85em;border-left:3px solid ${accentClr}` });
-
-      const headlineRow = h('div', { style: 'display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px' });
-      headlineRow.append(h('span', null, evt.headline));
-      if (isAi) {
-        headlineRow.appendChild(h('span', {
-          style: 'font-size:0.7em;padding:1px 4px;border-radius:3px;background:#44ccff22;color:#44ccff;font-weight:600;flex-shrink:0',
-        }, 'AI'));
+    // Show only pending deadline events from PREVIOUS turns — current-turn events are
+    // already shown below as normal event cards (with their own deadline badge).
+    const stillPending = this.state.pendingEvents.filter(e => e.turn < this.state.turn);
+    if (stillPending.length > 0) {
+      const urgentHeader = h('div', { style: 'font-size:0.82em;font-weight:600;color:#ff6644;margin-bottom:4px' },
+        `ACTIVE CRISES (${stillPending.length}) — Act or face escalation`);
+      this.actionsEl.appendChild(urgentHeader);
+      for (const pe of stillPending) {
+        const turns = pe.deadline ?? 1;
+        const urgentColor = turns <= 1 ? '#ff3333' : '#ff8844';
+        const card = h('div', { style: `background:rgba(255,80,50,0.08);padding:5px 8px;border-radius:4px;margin-bottom:4px;font-size:0.84em;border-left:3px solid ${urgentColor}` });
+        const headlineRow = h('div', { style: 'display:flex;align-items:center;gap:6px;font-weight:600' });
+        headlineRow.append(
+          h('span', null, pe.headline),
+          h('span', {
+            style: `margin-left:auto;font-size:0.8em;padding:1px 5px;border-radius:3px;background:${urgentColor}22;color:${urgentColor};font-weight:700;white-space:nowrap`,
+          }, `${turns} turn${turns !== 1 ? 's' : ''} remaining`),
+        );
+        card.append(headlineRow, h('div', { style: 'opacity:0.65;font-size:0.88em;margin-top:1px' }, pe.description));
+        this.actionsEl.appendChild(card);
       }
-      card.append(
-        headlineRow,
-        h('div', { style: 'opacity:0.7;font-size:0.9em;margin-bottom:4px' }, evt.description),
-      );
+      this.actionsEl.appendChild(h('div', { style: 'border-top:1px solid var(--border,#333);margin:4px 0 6px' }));
+    }
 
-      // Advisor briefings — collapsible to keep the panel compact
-      if (evt.advisorBriefings?.length) {
-        const details = document.createElement('details');
-        details.style.cssText = 'margin-top:4px;padding-top:4px;border-top:1px solid var(--border,#333)';
-        const summary = document.createElement('summary');
-        summary.style.cssText = 'cursor:pointer;font-size:0.82em;opacity:0.7;list-style:none;user-select:none';
-        summary.textContent = `Advisory Cabinet (${evt.advisorBriefings.length})`;
-        details.appendChild(summary);
-
-        for (const ab of evt.advisorBriefings) {
-          const advisor = this.state.advisors.find(a => a.id === ab.advisorId);
-          const color = ADVISOR_COLORS[ab.advisorId] ?? '#888';
-          const initial = (advisor?.name ?? ab.advisorId)[0]?.toUpperCase() ?? '?';
-
-          const advisorEl = h('div', { style: 'display:flex;gap:6px;align-items:flex-start;margin-top:4px;font-size:0.85em' });
-          const badge = h('span', {
-            style: `display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${color};color:#fff;font-size:0.75em;font-weight:700;flex-shrink:0;margin-top:1px`,
-          }, initial);
-          const body = h('div', null,
-            h('span', { style: `font-weight:600;color:${color}` }, `${advisor?.title ?? ab.advisorId}: `),
-            h('span', { style: 'opacity:0.85' }, ab.text),
-          );
-          advisorEl.append(badge, body);
-          details.appendChild(advisorEl);
-        }
-        card.appendChild(details);
-      }
-      this.actionsEl.appendChild(card);
+    for (const evt of this.currentEvents) {
+      this.renderEventCard(evt);
     }
 
     const btn = h('button', { style: 'margin-top:6px;padding:6px 16px;border-radius:4px;cursor:pointer;background:var(--accent,#4488ff);color:#fff;border:none;font-weight:600' }, 'Proceed to Actions →');
     btn.addEventListener('click', () => this.enterActionPhase());
     this.actionsEl.appendChild(btn);
+  }
+
+  private renderEventCard(evt: GameEvent): void {
+    const isAi      = evt.id.startsWith('ai-');
+    const isChained = evt.isChained === true;
+    const hasDeadline = evt.deadline != null;
+    const deadlineTurns = evt.deadline ?? 0;
+    const urgentColor = deadlineTurns <= 1 ? '#ff3333' : '#ff8844';
+    const accentClr = hasDeadline ? urgentColor : isChained ? '#cc88ff' : isAi ? '#44ccff' : '#ffcc44';
+    const card = h('div', { style: `background:var(--panel-bg,#1a1a2e);padding:6px 8px;border-radius:4px;margin-bottom:6px;font-size:0.85em;border-left:3px solid ${accentClr}` });
+
+    const headlineRow = h('div', { style: 'display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:2px;flex-wrap:wrap' });
+    headlineRow.append(h('span', null, evt.headline));
+    if (isAi) {
+      headlineRow.appendChild(h('span', {
+        style: 'font-size:0.7em;padding:1px 4px;border-radius:3px;background:#44ccff22;color:#44ccff;font-weight:600;flex-shrink:0',
+      }, 'AI'));
+    }
+    if (isChained) {
+      headlineRow.appendChild(h('span', {
+        style: 'font-size:0.7em;padding:1px 4px;border-radius:3px;background:#cc88ff22;color:#cc88ff;font-weight:600;flex-shrink:0',
+      }, '↳ Follow-up'));
+    }
+    if (hasDeadline) {
+      headlineRow.appendChild(h('span', {
+        style: `font-size:0.78em;padding:1px 5px;border-radius:3px;background:${urgentColor}22;color:${urgentColor};font-weight:700;margin-left:auto;white-space:nowrap`,
+      }, `${deadlineTurns} turn${deadlineTurns !== 1 ? 's' : ''} to act`));
+    }
+    card.append(
+      headlineRow,
+      h('div', { style: 'opacity:0.7;font-size:0.9em;margin-bottom:4px' }, evt.description),
+    );
+
+    // Advisor briefings — collapsible to keep the panel compact
+    if (evt.advisorBriefings?.length) {
+      const details = document.createElement('details');
+      details.style.cssText = 'margin-top:4px;padding-top:4px;border-top:1px solid var(--border,#333)';
+      const summary = document.createElement('summary');
+      summary.style.cssText = 'cursor:pointer;font-size:0.82em;opacity:0.7;list-style:none;user-select:none';
+      summary.textContent = `Advisory Cabinet (${evt.advisorBriefings.length})`;
+      details.appendChild(summary);
+
+      for (const ab of evt.advisorBriefings) {
+        const advisor = this.state.advisors.find(a => a.id === ab.advisorId);
+        const color = ADVISOR_COLORS[ab.advisorId] ?? '#888';
+        const initial = (advisor?.name ?? ab.advisorId)[0]?.toUpperCase() ?? '?';
+
+        const advisorEl = h('div', { style: 'display:flex;gap:6px;align-items:flex-start;margin-top:4px;font-size:0.85em' });
+        const badge = h('span', {
+          style: `display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${color};color:#fff;font-size:0.75em;font-weight:700;flex-shrink:0;margin-top:1px`,
+        }, initial);
+        const body = h('div', null,
+          h('span', { style: `font-weight:600;color:${color}` }, `${advisor?.title ?? ab.advisorId}: `),
+          h('span', { style: 'opacity:0.85' }, ab.text),
+        );
+        advisorEl.append(badge, body);
+        details.appendChild(advisorEl);
+      }
+      card.appendChild(details);
+    }
+    this.actionsEl.appendChild(card);
   }
 
   // ── Action phase (Shadow President: categorised actions) ───────────────
@@ -459,20 +512,30 @@ export class GameHudPanel extends Panel {
     const actions = getAvailableActions(this.state);
     const categories: GameActionCategory[] = ['diplomatic', 'economic', 'military', 'covert'];
 
+    // Regions with active deadline crises — highlight them in action phase
+    const urgentRegions = new Set(this.state.pendingEvents.filter(e => e.turn < this.state.turn).map(e => e.region));
+
     for (const cat of categories) {
       const catActions = actions.filter(a => a.category === cat);
       if (catActions.length === 0) continue;
+
+      // Separate locked (tech-unlockable) from active actions
+      const activeActions = catActions.filter(a => !a.locked);
+      const lockedByType = new Map<string, GameAction>();
+      for (const a of catActions.filter(a => a.locked)) {
+        if (!lockedByType.has(a.type)) lockedByType.set(a.type, a);
+      }
 
       const details = document.createElement('details');
       details.style.cssText = 'margin-bottom:4px';
       const summary = document.createElement('summary');
       summary.style.cssText = 'cursor:pointer;font-weight:600;font-size:0.9em;padding:4px 0';
-      summary.textContent = `${CATEGORY_LABELS[cat]} (${catActions.length})`;
+      summary.textContent = `${CATEGORY_LABELS[cat]} (${activeActions.length})`;
       details.appendChild(summary);
 
-      // Group by action type
+      // Group active actions by type
       const byType = new Map<string, GameAction[]>();
-      for (const a of catActions) {
+      for (const a of activeActions) {
         const group = byType.get(a.type) ?? [];
         group.push(a);
         byType.set(a.type, group);
@@ -486,18 +549,37 @@ export class GameHudPanel extends Panel {
         for (const a of group) {
           const canAfford = this.canAfford(a);
           const riskBadge = a.risk > 0 ? ` [Risk: ${a.risk}%]` : '';
+          const isUrgent = urgentRegions.has(a.targetRegion);
           const costStr = Object.entries(a.cost).map(([k, v]) => `${v} ${k}`).join(', ');
+          const urgentStyle = isUrgent ? 'border-left:2px solid #ff8844;' : '';
           const btn = h('button', {
-            style: `padding:3px 8px;border-radius:3px;cursor:${canAfford ? 'pointer' : 'not-allowed'};opacity:${canAfford ? '1' : '0.4'};background:var(--panel-bg,#1a1a2e);border:1px solid var(--border,#333);color:inherit;font-size:0.8em;text-align:left;width:100%;margin-bottom:1px`,
-            title: `Cost: ${costStr}${a.risk > 0 ? ` | Risk: ${a.risk}%` : ''}`,
+            style: `padding:3px 8px;border-radius:3px;cursor:${canAfford ? 'pointer' : 'not-allowed'};opacity:${canAfford ? '1' : '0.4'};background:var(--panel-bg,#1a1a2e);border:1px solid var(--border,#333);${urgentStyle}color:inherit;font-size:0.8em;text-align:left;width:100%;margin-bottom:1px`,
+            title: `Cost: ${costStr}${a.risk > 0 ? ` | Risk: ${a.risk}%` : ''}${isUrgent ? ' | ⚠ Active crisis' : ''}`,
             'aria-disabled': canAfford ? 'false' : 'true',
-          }, a.label + riskBadge);
+          }, a.label + riskBadge + (isUrgent ? ' ⚠' : ''));
           if (canAfford) {
             btn.addEventListener('click', () => this.executeAction(a));
           }
           details.appendChild(btn);
         }
       }
+
+      // Locked tech-unlock actions — shown once per unique type at the bottom
+      if (lockedByType.size > 0) {
+        const lockHeader = h('div', { style: 'font-size:0.78em;opacity:0.45;margin:6px 0 2px 8px;font-style:italic' }, 'Advanced (locked):');
+        details.appendChild(lockHeader);
+        for (const a of lockedByType.values()) {
+          const lockEl = h('div', {
+            style: 'padding:3px 8px;margin-bottom:1px;border-radius:3px;opacity:0.35;font-size:0.79em;border:1px dashed var(--border,#333);color:inherit;display:flex;gap:6px;align-items:center',
+          });
+          lockEl.append(
+            h('span', null, `🔒 ${a.type.replace(/([A-Z])/g, ' $1').trim()}`),
+            h('span', { style: 'margin-left:auto;font-size:0.85em' }, a.unlockRequirement ?? ''),
+          );
+          details.appendChild(lockEl);
+        }
+      }
+
       this.actionsEl.appendChild(details);
     }
 

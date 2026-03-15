@@ -292,10 +292,11 @@ function sebufApiPlugin(): Plugin {
   return {
     name: 'sebuf-api',
     configureServer(server) {
-      // Invalidate cached router on HMR updates to server/ files
+      // Invalidate cached router on HMR updates to server/ or api/ files
       server.watcher.on('change', (file) => {
-        if (file.includes('/server/') || file.includes('/src/generated/server/')) {
+        if (file.includes('/server/') || file.includes('/src/generated/server/') || file.includes('/api/')) {
           cachedRouter = null;
+          cachedCorsMod = null;
         }
       });
 
@@ -836,7 +837,7 @@ export default defineConfig({
     port: 3000,
     open: !isE2E,
     hmr: isE2E ? false : undefined,
-    allowedHosts: ['nancey-phyllomic-lauditorily.ngrok-free.dev'],
+    allowedHosts: ['sxs.exarcos.net', 'game.sxs.exarcos.net', 'tech.sxs.exarcos.net', 'finance.sxs.exarcos.net', 'happy.sxs.exarcos.net', 'commodity.sxs.exarcos.net'],
     watch: {
       ignored: [
         '**/test-results/**',

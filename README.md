@@ -2,12 +2,12 @@
 
 **Real-time global intelligence dashboard** — AI-powered news aggregation, geopolitical monitoring, and infrastructure tracking in a unified situational awareness interface.
 
-[![GitHub stars](https://img.shields.io/github/stars/koala73/worldmonitor?style=social)](https://github.com/koala73/worldmonitor/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/koala73/worldmonitor?style=social)](https://github.com/koala73/worldmonitor/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/stevenjmiklovic/worldmonitor?style=social)](https://github.com/stevenjmiklovic/worldmonitor/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/stevenjmiklovic/worldmonitor?style=social)](https://github.com/stevenjmiklovic/worldmonitor/network/members)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Last commit](https://img.shields.io/github/last-commit/koala73/worldmonitor)](https://github.com/koala73/worldmonitor/commits/main)
-[![Latest release](https://img.shields.io/github/v/release/koala73/worldmonitor?style=flat)](https://github.com/koala73/worldmonitor/releases/latest)
+[![Last commit](https://img.shields.io/github/last-commit/stevenjmiklovic/worldmonitor)](https://github.com/stevenjmiklovic/worldmonitor/commits/main)
+[![Latest release](https://img.shields.io/github/v/release/stevenjmiklovic/worldmonitor?style=flat)](https://github.com/stevenjmiklovic/worldmonitor/releases/latest)
 
 <p align="center">
   <a href="https://sxs.exarcos.net"><img src="https://img.shields.io/badge/Web_App-sxs.exarcos.net-blue?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Web App"></a>&nbsp;
@@ -26,9 +26,9 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.sxs.exarcos.net"><strong>Documentation</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/koala73/worldmonitor/releases/latest"><strong>Releases</strong></a> &nbsp;·&nbsp;
-  <a href="https://docs.sxs.exarcos.net/contributing"><strong>Contributing</strong></a>
+  <a href="https://docs.worldmonitor.app"><strong>Documentation</strong></a> &nbsp;·&nbsp;
+  <a href="https://github.com/stevenjmiklovic/worldmonitor/releases/latest"><strong>Releases</strong></a> &nbsp;·&nbsp;
+  <a href="https://docs.worldmonitor.app/contributing"><strong>Contributing</strong></a>
 </p>
 
 ![World Monitor Dashboard](docs/images/worldmonitor-7-mar-2026.jpg)
@@ -54,7 +54,7 @@ For the full feature list, architecture, data sources, and algorithms, see the *
 ## Quick Start
 
 ```bash
-git clone https://github.com/koala73/worldmonitor.git
+git clone https://github.com/stevenjmiklovic/worldmonitor.git
 cd worldmonitor
 npm install
 npm run dev
@@ -120,12 +120,12 @@ Copyright (C) 2024-2026 Elie Habib. All rights reserved.
 
 ## Author
 
-**Elie Habib** — [GitHub](https://github.com/koala73)
+**Elie Habib** — [GitHub](https://github.com/stevenjmiklovic)
 
 ## Contributors
 
-<a href="https://github.com/koala73/worldmonitor/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=koala73/worldmonitor" />
+<a href="https://github.com/stevenjmiklovic/worldmonitor/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=stevenjmiklovic/worldmonitor" />
 </a>
 
 ## Security Acknowledgments
@@ -147,9 +147,9 @@ See our [Security Policy](./SECURITY.md) for responsible disclosure guidelines.
 
 ## Star History
 
-<a href="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date">
+<a href="https://api.star-history.com/svg?repos=stevenjmiklovic/worldmonitor&type=Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date&type=Date&theme=dark" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=stevenjmiklovic/worldmonitor&type=Date&type=Date&theme=dark" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=stevenjmiklovic/worldmonitor&type=Date&type=Date" />
  </picture>
 </a>

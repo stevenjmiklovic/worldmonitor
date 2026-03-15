@@ -9,9 +9,14 @@ export function clampInt(value: number | undefined, fallback: number, min: numbe
  * Global Yahoo Finance request gate.
  * Ensures minimum spacing between ANY Yahoo requests across all handlers.
  * Multiple handlers calling Yahoo concurrently causes IP-level rate limiting (429).
+ *
+ * Circuit breaker: after a 429 the direct path is skipped for YAHOO_CIRCUIT_BREAK_MS
+ * so requests fall through immediately to the relay without logging further 429s.
  */
 let yahooLastRequest = 0;
 const YAHOO_MIN_GAP_MS = 600;
+const YAHOO_CIRCUIT_BREAK_MS = 5 * 60 * 1000; // 5 minutes
+let yahooCircuitBrokenUntil = 0;
 let yahooQueue: Promise<void> = Promise.resolve();
 
 export function yahooGate(): Promise<void> {
@@ -23,4 +28,14 @@ export function yahooGate(): Promise<void> {
     yahooLastRequest = Date.now();
   });
   return yahooQueue;
+}
+
+/** Returns true when Yahoo direct is rate-limited and the relay should be used immediately. */
+export function yahooCircuitOpen(): boolean {
+  return Date.now() < yahooCircuitBrokenUntil;
+}
+
+/** Call when Yahoo returns 429 to open the circuit breaker. */
+export function yahooCircuitTrip(): void {
+  yahooCircuitBrokenUntil = Date.now() + YAHOO_CIRCUIT_BREAK_MS;
 }
