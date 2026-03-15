@@ -169,7 +169,7 @@ async function fetchTradeBarriers() {
       const year = parseInt(row.Year ?? row.year ?? '0', 10);
       const value = parseFloat(row.Value ?? row.value ?? '');
       const cc = String(row.ReportingEconomyCode ?? '');
-      return !isNaN(year) && !isNaN(value) && cc ? { country: WTO_MEMBER_CODES[cc] ?? '', countryCode: cc, year, value } : null;
+      return !Number.isNaN(year) && !Number.isNaN(value) && cc ? { country: WTO_MEMBER_CODES[cc] ?? '', countryCode: cc, year, value } : null;
     }).filter(Boolean);
   };
 
