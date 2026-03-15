@@ -271,7 +271,7 @@ async function fetchTariffTrends() {
     const datapoints = dataset.map(row => {
       const year = parseInt(row.Year ?? row.year ?? '', 10);
       const tariffRate = parseFloat(row.Value ?? row.value ?? '');
-      if (isNaN(year) || isNaN(tariffRate)) return null;
+      if (Number.isNaN(year) || Number.isNaN(tariffRate)) return null;
       return {
         reportingCountry: WTO_MEMBER_CODES[reporter] ?? reporter,
         partnerCountry: 'World', productSector: 'All products',
