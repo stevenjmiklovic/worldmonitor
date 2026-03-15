@@ -114,7 +114,7 @@ async function fetchTradeFlows() {
       return dataset.map(row => {
         const year = parseInt(row.Year ?? row.year ?? '', 10);
         const value = parseFloat(row.Value ?? row.value ?? '');
-        return !isNaN(year) && !isNaN(value) ? { year, indicator, value } : null;
+        return !Number.isNaN(year) && !Number.isNaN(value) ? { year, indicator, value } : null;
       }).filter(Boolean);
     };
 
