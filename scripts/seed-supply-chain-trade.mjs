@@ -58,7 +58,7 @@ async function fetchShippingRates() {
     if (!resp.ok) { console.warn(`  FRED ${cfg.seriesId}: HTTP ${resp.status}`); continue; }
     const data = await resp.json();
     const observations = (data.observations || [])
-      .map(o => { const v = parseFloat(o.value); return isNaN(v) || o.value === '.' ? null : { date: o.date, value: v }; })
+      .map(o => { const v = parseFloat(o.value); return Number.isNaN(v) || o.value === '.' ? null : { date: o.date, value: v }; })
       .filter(Boolean).reverse();
     if (observations.length === 0) continue;
     const current = observations[observations.length - 1].value;
