@@ -1455,6 +1455,7 @@ export interface CountryBriefSignals {
   travelAdvisoryMaxLevel: string | null;
   gpsJammingHexes: number;
   isTier1: boolean;
+}
 // ============================================
 // The Great Game – simulation types
 // (Inspired by the 1993 DOS classic Shadow President)
