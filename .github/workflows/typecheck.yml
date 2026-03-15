@@ -3,7 +3,7 @@ name: Typecheck
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [sxs-main]
 
 jobs:
   typecheck:
