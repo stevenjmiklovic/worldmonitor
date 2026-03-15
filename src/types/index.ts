@@ -1455,4 +1455,183 @@ export interface CountryBriefSignals {
   travelAdvisoryMaxLevel: string | null;
   gpsJammingHexes: number;
   isTier1: boolean;
+// ============================================
+// The Great Game – simulation types
+// (Inspired by the 1993 DOS classic Shadow President)
+// ============================================
+
+export type GameRegionId = 'northAmerica' | 'europe' | 'eastAsia' | 'southAsia' | 'mena' | 'subSaharanAfrica' | 'latam' | 'centralAsia' | 'oceania';
+
+/** Government type for each region – affects action outcomes (Shadow President). */
+export type GovernmentType = 'democracy' | 'autocracy' | 'monarchy' | 'theocracy' | 'communist' | 'militaryJunta';
+
+/** Leader personality type – layered modifier on top of government type. */
+export type LeaderPersonality = 'hawk' | 'dove' | 'reformist' | 'pragmatist' | 'nationalist' | 'populist';
+
+export interface GameLeader {
+  name: string;
+  personality: LeaderPersonality;
+}
+
+/** DEFCON nuclear-readiness levels (1 = nuclear war imminent, 5 = peacetime). */
+export type DefconLevel = 1 | 2 | 3 | 4 | 5;
+
+// -- Resources & Budget -------------------------------------------------------
+
+export interface GameResources {
+  politicalCapital: number;
+  intelligenceAssets: number;
+  militaryReadiness: number;
+  economicInfluence: number;
+  technologyLevel: number;
+}
+
+/** Per-turn budget allocation (Shadow President style). Sums to 100 %. */
+export interface GameBudget {
+  defense: number;        // → militaryReadiness regen
+  intelligence: number;   // → intelligenceAssets regen
+  diplomacy: number;      // → politicalCapital regen
+  economy: number;        // → economicInfluence regen
+  technology: number;     // → technologyLevel regen
+}
+
+// -- Advisors ------------------------------------------------------------------
+
+export type GameAdvisorId = 'secState' | 'secDef' | 'ciaDirector' | 'econAdvisor' | 'jointChiefs';
+
+export interface GameAdvisor {
+  id: GameAdvisorId;
+  name: string;
+  title: string;
+  /** Brief flavour description of their outlook. */
+  perspective: string;
+}
+
+export interface AdvisorBriefing {
+  advisorId: GameAdvisorId;
+  text: string;
+}
+
+// -- Actions -------------------------------------------------------------------
+
+export type GameActionCategory = 'diplomatic' | 'economic' | 'military' | 'covert';
+
+export type GameActionType =
+  // Diplomatic (Shadow President: praise / warn / threaten / treaty)
+  | 'diplomaticPraise'
+  | 'diplomaticWarn'
+  | 'diplomaticThreaten'
+  | 'proposeTreaty'
+  | 'diplomaticSummit'
+  // Economic
+  | 'economicAid'
+  | 'tradeAgreement'
+  | 'imposeSanctions'
+  | 'liftSanctions'
+  // Military
+  | 'militaryExercise'
+  | 'deployTroops'
+  | 'withdrawTroops'
+  | 'nuclearPosture'
+  // Covert (Shadow President: destabilise, propaganda, assassinate)
+  | 'deployAgent'
+  | 'covertInfluence'
+  | 'covertDestabilise'
+  | 'cyberOperation'
+  | 'fundCoup'
+  // Tech-unlocked actions (available at Technology Level thresholds)
+  | 'satelliteSurveillance'
+  | 'aiDisinformation'
+  | 'cyberDeterrence';
+
+export interface GameAction {
+  type: GameActionType;
+  category: GameActionCategory;
+  label: string;
+  description: string;
+  targetRegion: GameRegionId;
+  cost: Partial<GameResources>;
+  /** How risky the action is (0-100). High-risk covert ops may leak. */
+  risk: number;
+  /** Approval impact if the action becomes public (covert ops risk exposure). */
+  approvalImpact: number;
+  /** If true, action is not yet available (Technology Level too low). */
+  locked?: boolean;
+  /** Human-readable unlock requirement shown on locked actions. */
+  unlockRequirement?: string;
+}
+
+// -- Region state --------------------------------------------------------------
+
+export interface GameRegionState {
+  id: GameRegionId;
+  name: string;
+  influence: number;        // -100 (hostile) to 100 (allied)
+  stability: number;        // 0–100
+  threatLevel: number;      // 0–100
+  governmentType: GovernmentType;
+  nuclearCapable: boolean;
+  sanctioned: boolean;
+  troopsDeployed: boolean;
+  /** Current leader — personality modifies how actions land in this region. */
+  leader: GameLeader;
+}
+
+// -- Events --------------------------------------------------------------------
+
+export interface GameEvent {
+  id: string;
+  turn: number;
+  headline: string;
+  description: string;
+  region: GameRegionId;
+  impact: Partial<Record<GameRegionId, { influence?: number; stability?: number; threatLevel?: number }>>;
+  resourceDelta?: Partial<GameResources>;
+  approvalDelta?: number;
+  defconDelta?: number;
+  /** If present, advisor briefings generated alongside this event. */
+  advisorBriefings?: AdvisorBriefing[];
+  /** Turns remaining before this crisis auto-resolves at 1.5× impact. */
+  deadline?: number;
+  /** True if the deadline expired and the event was auto-resolved. */
+  autoResolved?: boolean;
+  /** True if this event is a diplomatic reaction from a third-party region. */
+  isReaction?: boolean;
+  /** The region that generated this reaction event. */
+  reactingRegion?: GameRegionId;
+  /** True if this event was triggered by a preceding event chain. */
+  isChained?: boolean;
+}
+
+// -- Phases & objectives -------------------------------------------------------
+
+export type GamePhase = 'briefing' | 'action' | 'resolution' | 'gameOver';
+
+export interface GameObjective {
+  id: string;
+  description: string;
+  completed: boolean;
+}
+
+// -- Top-level state -----------------------------------------------------------
+
+export interface GameState {
+  turn: number;
+  maxTurns: number;
+  phase: GamePhase;
+  resources: GameResources;
+  budget: GameBudget;
+  regions: Record<GameRegionId, GameRegionState>;
+  log: GameEvent[];
+  objectives: GameObjective[];
+  score: number;
+  /** Domestic approval 0-100 (Shadow President). Drops below 15 → impeachment. */
+  approval: number;
+  /** DEFCON level 5 (peace) → 1 (nuclear war). Reaching 1 ends the game. */
+  defcon: DefconLevel;
+  advisors: GameAdvisor[];
+  /** Crisis events with active deadlines awaiting player response. */
+  pendingEvents: GameEvent[];
+  /** Chain events scheduled to fire on a future turn. */
+  pendingChainEvents: Array<{ templateId: string; triggerTurn: number; originRegion: GameRegionId }>;
 }

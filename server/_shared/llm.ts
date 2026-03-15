@@ -1,5 +1,8 @@
 import { CHROME_UA } from './constants';
 import { isProviderAvailable } from './llm-health';
+import { logger } from '../../src/lib/logger';
+
+const llmLogger = logger.child({ module: 'llm' });
 
 export interface ProviderCredentials {
   apiUrl: string;
@@ -26,7 +29,7 @@ export function getProviderCredentials(provider: string): ProviderCredentials | 
       try {
         const hostname = new URL(baseUrl).hostname;
         if (!OLLAMA_HOST_ALLOWLIST.has(hostname)) {
-          console.warn(`[llm] Ollama blocked: hostname "${hostname}" not in allowlist`);
+          llmLogger.warn('Ollama blocked', { hostname });
           return null;
         }
       } catch {
@@ -138,7 +141,7 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult | nul
 
     // Health gate: skip provider if endpoint is unreachable
     if (!(await isProviderAvailable(creds.apiUrl))) {
-      console.warn(`[llm:${providerName}] Offline, skipping`);
+      llmLogger.warn('Offline, skipping', { provider: providerName });
       if (forcedProvider) return null;
       continue;
     }
@@ -158,7 +161,7 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult | nul
       });
 
       if (!resp.ok) {
-        console.warn(`[llm:${providerName}] HTTP ${resp.status}`);
+        llmLogger.warn('HTTP error', { provider: providerName, status: resp.status });
         if (forcedProvider) return null;
         continue;
       }
@@ -185,14 +188,14 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult | nul
       }
 
       if (validate && !validate(content)) {
-        console.warn(`[llm:${providerName}] validate() rejected response, trying next`);
+        llmLogger.warn('validate() rejected response', { provider: providerName });
         if (forcedProvider) return null;
         continue;
       }
 
       return { content, model: creds.model, provider: providerName, tokens };
     } catch (err) {
-      console.warn(`[llm:${providerName}] ${(err as Error).message}`);
+      llmLogger.warn('Provider call failed', err instanceof Error ? err : new Error(String(err)), { provider: providerName });
       if (forcedProvider) return null;
     }
   }

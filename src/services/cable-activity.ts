@@ -1,7 +1,10 @@
 import type { CableAdvisory, RepairShip, UnderseaCable } from '@/types';
+import { logger } from '@/lib/logger';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { UNDERSEA_CABLES } from '@/config';
 import { MaritimeServiceClient, type NavigationalWarning } from '@/generated/client/worldmonitor/maritime/v1/service_client';
+
+const cableActivityLogger = logger.child({ module: 'CableActivity' });
 
 const maritimeClient = new MaritimeServiceClient(getRpcBaseUrl(), { fetch: (...args) => globalThis.fetch(...args) });
 
@@ -290,7 +293,7 @@ export async function fetchCableActivity(): Promise<CableActivity> {
 
     return activity;
   } catch (error) {
-    console.error('[CableActivity] Failed to fetch NGA warnings:', error);
+    cableActivityLogger.error('Failed to fetch NGA warnings', error instanceof Error ? error : undefined);
     return { advisories: [], repairShips: [] };
   }
 }

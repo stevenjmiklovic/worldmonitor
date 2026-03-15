@@ -1,7 +1,7 @@
 /**
  * Shared helpers, types, and constants for the market service handler RPCs.
  */
-import { CHROME_UA, yahooGate } from '../../../_shared/constants';
+import { CHROME_UA, yahooGate, yahooCircuitOpen, yahooCircuitTrip } from '../../../_shared/constants';
 import cryptoConfig from '../../../../shared/crypto.json';
 import stablecoinConfig from '../../../../shared/stablecoins.json';
 export { parseStringArray } from '../../../_shared/parse-string-array';
@@ -19,7 +19,10 @@ function getRelayBaseUrl(): string | null {
 }
 
 function getRelayHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { 'User-Agent': CHROME_UA };
+  const headers: Record<string, string> = {
+    'User-Agent': CHROME_UA,
+    'ngrok-skip-browser-warning': '1',
+  };
   const relaySecret = process.env.RELAY_SHARED_SECRET;
   if (relaySecret) {
     const relayHeader = (process.env.RELAY_AUTH_HEADER || 'x-relay-key').toLowerCase();
@@ -181,23 +184,26 @@ function parseYahooChartResponse(data: YahooChartResponse): { price: number; cha
 export async function fetchYahooQuote(
   symbol: string,
 ): Promise<{ price: number; change: number; sparkline: number[] } | null> {
-  // Try direct Yahoo first
-  try {
-    await yahooGate();
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`;
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-    if (resp.ok) {
-      const data: YahooChartResponse = await resp.json();
-      const parsed = parseYahooChartResponse(data);
-      if (parsed) return parsed;
-    } else {
-      console.warn(`[Yahoo] ${symbol} direct HTTP ${resp.status}`);
+  // Try direct Yahoo first (skip if circuit breaker is open after a recent 429)
+  if (!yahooCircuitOpen()) {
+    try {
+      await yahooGate();
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`;
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': CHROME_UA },
+        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      });
+      if (resp.ok) {
+        const data: YahooChartResponse = await resp.json();
+        const parsed = parseYahooChartResponse(data);
+        if (parsed) return parsed;
+      } else {
+        console.warn(`[Yahoo] ${symbol} direct HTTP ${resp.status}`);
+        if (resp.status === 429) yahooCircuitTrip();
+      }
+    } catch (err) {
+      console.warn(`[Yahoo] ${symbol} direct error:`, (err as Error).message);
     }
-  } catch (err) {
-    console.warn(`[Yahoo] ${symbol} direct error:`, (err as Error).message);
   }
 
   // Fallback: Railway relay (different IP, not rate-limited by Yahoo)

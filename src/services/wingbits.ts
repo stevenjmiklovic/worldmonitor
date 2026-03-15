@@ -7,6 +7,7 @@
  */
 
 import { createCircuitBreaker, toUniqueSortedLowercase } from '@/utils';
+import { logger } from '@/lib/logger';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { dataFreshness } from './data-freshness';
 import { isFeatureAvailable } from './runtime-config';
@@ -50,6 +51,8 @@ export interface EnrichedAircraftInfo {
 // ---- Sebuf client ----
 
 const client = new MilitaryServiceClient(getRpcBaseUrl(), { fetch: (...args) => globalThis.fetch(...args) });
+
+const wingbitsLogger = logger.child({ module: 'Wingbits' });
 
 // Client-side cache for aircraft details
 const localCache = new Map<string, { data: WingbitsAircraftDetails; timestamp: number }>();
@@ -295,7 +298,7 @@ export async function getAircraftDetailsBatch(icao24List: string[]): Promise<Map
       dataFreshness.recordUpdate('wingbits', results.size);
     }
   } catch (error) {
-    console.warn('[Wingbits] Batch fetch failed:', error);
+    wingbitsLogger.warn('Batch fetch failed', error instanceof Error ? error : undefined);
     dataFreshness.recordError('wingbits', error instanceof Error ? error.message : 'Unknown error');
   }
 

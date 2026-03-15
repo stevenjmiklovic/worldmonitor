@@ -1,6 +1,9 @@
 import { InfrastructureServiceClient, type TemporalAnomaly as TemporalAnomalyProto } from '@/generated/client/worldmonitor/infrastructure/v1/service_client';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { getHydratedData } from '@/services/bootstrap';
+import { logger } from '@/lib/logger';
+
+const temporalBaselineLogger = logger.child({ module: 'TemporalBaseline' });
 
 export type TemporalEventType =
   | 'military_flights'
@@ -91,7 +94,7 @@ export async function fetchLiveAnomalies(): Promise<{ anomalies: TemporalAnomaly
       trackedTypes: resp.trackedTypes ?? [],
     };
   } catch (e) {
-    console.warn('[TemporalBaseline] Live fetch failed:', e);
+    temporalBaselineLogger.warn('Live fetch failed', e instanceof Error ? e : undefined);
     return { anomalies: [], trackedTypes: [] };
   }
 }
@@ -103,7 +106,7 @@ async function reportMetrics(
   try {
     await client.recordBaselineSnapshot({ updates });
   } catch (e) {
-    console.warn('[TemporalBaseline] Update failed:', e);
+    temporalBaselineLogger.warn('Update failed', e instanceof Error ? e : undefined);
   }
 }
 
@@ -126,7 +129,7 @@ async function checkAnomaly(
       message: formatAnomalyMessage(type, region, count, data.baseline?.mean ?? 0, data.anomaly.multiplier),
     };
   } catch (e) {
-    console.warn('[TemporalBaseline] Check failed:', e);
+    temporalBaselineLogger.warn('Check failed', e instanceof Error ? e : undefined);
     return null;
   }
 }

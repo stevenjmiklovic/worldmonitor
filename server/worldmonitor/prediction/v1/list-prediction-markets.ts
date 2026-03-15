@@ -154,7 +154,6 @@ function mapMarket(market: GammaMarket): PredictionMarket {
     closesAt: Number.isFinite(closesAtMs) ? closesAtMs : 0,
     category: '',
     source: 'MARKET_SOURCE_POLYMARKET' as MarketSource,
-
   };
 }
 
