@@ -1,5 +1,8 @@
 import { getApiBaseUrl, isDesktopRuntime } from './runtime';
 import { invokeTauri } from './tauri-bridge';
+import { logger } from '@/lib/logger';
+
+const runtimeConfigLogger = logger.child({ module: 'runtime-config' });
 
 export type RuntimeSecretKey =
   | 'GROQ_API_KEY'
@@ -449,7 +452,7 @@ export function setFeatureToggle(featureId: RuntimeFeatureId, enabled: boolean):
 
 export async function setSecretValue(key: RuntimeSecretKey, value: string): Promise<void> {
   if (!isDesktopRuntime()) {
-    console.warn('[runtime-config] Ignoring secret write outside desktop runtime');
+    runtimeConfigLogger.warn('Ignoring secret write outside desktop runtime');
     return;
   }
 
@@ -467,7 +470,7 @@ export async function setSecretValue(key: RuntimeSecretKey, value: string): Prom
   try {
     await pushSecretToSidecar(key, sanitized || '');
   } catch (error) {
-    console.warn(`[runtime-config] Failed to sync ${key} to sidecar`, error);
+    runtimeConfigLogger.warn('Failed to sync secret to sidecar', error instanceof Error ? error : undefined, { key });
   }
 
   // Signal other windows (main ↔ settings) to reload secrets from keychain.
@@ -593,11 +596,11 @@ export async function loadDesktopSecrets(): Promise<void> {
       try {
         await pushSecretBatchToSidecar(entries);
       } catch (batchErr) {
-        console.warn('[runtime-config] Batch env update failed, falling back to individual pushes', batchErr);
+        runtimeConfigLogger.warn('Batch env update failed, falling back to individual pushes', batchErr instanceof Error ? batchErr : undefined);
         await Promise.allSettled(
           entries.map(({ key, value }) =>
             pushSecretToSidecar(key as RuntimeSecretKey, value).catch((error) => {
-              console.warn(`[runtime-config] Failed to sync ${key} to sidecar`, error);
+              runtimeConfigLogger.warn('Failed to sync secret to sidecar', error instanceof Error ? error : undefined, { key });
             })
           )
         );
@@ -606,7 +609,7 @@ export async function loadDesktopSecrets(): Promise<void> {
 
     notifyConfigChanged();
   } catch (error) {
-    console.warn('[runtime-config] Failed to load desktop secrets from vault', error);
+    runtimeConfigLogger.warn('Failed to load desktop secrets from vault', error instanceof Error ? error : undefined);
   } finally {
     secretsReadyResolve();
   }

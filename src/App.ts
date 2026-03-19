@@ -42,7 +42,6 @@ import { PanelLayoutManager } from '@/app/panel-layout';
 import { DataLoaderManager } from '@/app/data-loader';
 import { EventHandlerManager } from '@/app/event-handlers';
 import { resolveUserRegion, resolvePreciseUserCoordinates, type PreciseCoordinates } from '@/utils/user-location';
-import { showProBanner } from '@/components/ProBanner';
 import {
   CorrelationEngine,
   militaryAdapter,
@@ -434,6 +433,11 @@ export class App {
       renewablePanel: null,
       tvMode: null,
       happyAllItems: [],
+      // Game variant state
+      gameHudPanel: null,
+      gameBriefingPanel: null,
+      gameLogPanel: null,
+      gameState: null,
       isDestroyed: false,
       isPlaybackMode: false,
       isIdle: false,
@@ -562,7 +566,7 @@ export class App {
 
     // Phase 1: Layout (creates map + panels — they'll find hydrated data)
     this.panelLayout.init();
-    showProBanner(this.state.container);
+
 
     const mobileGeoCoords = await geoCoordsPromise;
     if (mobileGeoCoords && this.state.map) {

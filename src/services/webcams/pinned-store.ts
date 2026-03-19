@@ -1,3 +1,7 @@
+import { logger } from '@/lib/logger';
+
+const pinnedWebcamsLogger = logger.child({ module: 'pinned-webcams' });
+
 const STORAGE_KEY = 'wm-pinned-webcams';
 const CHANGE_EVENT = 'wm-pinned-webcams-changed';
 const MAX_ACTIVE = 4;
@@ -43,7 +47,7 @@ function save(webcams: PinnedWebcam[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(webcams));
   } catch (err) {
-    console.warn('[pinned-webcams] localStorage save failed:', err);
+    pinnedWebcamsLogger.warn('localStorage save failed', err instanceof Error ? err : undefined);
     showToast('Could not save pinned webcams — storage full');
   }
   _cachedList = null;

@@ -1,4 +1,5 @@
 import { getRpcBaseUrl } from '@/services/rpc-client';
+import { logger } from '@/lib/logger';
 import {
   WebcamServiceClient,
   type WebcamEntry,
@@ -6,6 +7,8 @@ import {
   type ListWebcamsResponse,
   type GetWebcamImageResponse,
 } from '@/generated/client/worldmonitor/webcam/v1/service_client';
+
+const webcamsLogger = logger.child({ module: 'webcams' });
 
 const client = new WebcamServiceClient(getRpcBaseUrl(), {
   fetch: (...args) => globalThis.fetch(...args),
@@ -31,7 +34,7 @@ export async function fetchWebcams(
       boundN: bounds.n,
     });
   } catch (err) {
-    console.warn('[webcams] fetch failed:', err);
+    webcamsLogger.warn('fetch failed', err instanceof Error ? err : undefined);
     return emptyResponse;
   }
 }
@@ -52,7 +55,7 @@ export async function fetchWebcamImage(webcamId: string): Promise<GetWebcamImage
     }
     return result;
   } catch (err) {
-    console.warn('[webcams] image fetch failed:', err);
+    webcamsLogger.warn('image fetch failed', err instanceof Error ? err : undefined);
     return {
       thumbnailUrl: '', playerUrl: '', title: '',
       windyUrl: `https://www.windy.com/webcams/${webcamId}`,

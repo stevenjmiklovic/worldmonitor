@@ -49,6 +49,7 @@ function toProtoMarket(m: BootstrapMarket, category: string): PredictionMarket {
   };
 }
 
+
 export const listPredictionMarkets: PredictionServiceHandler['listPredictionMarkets'] = async (
   _ctx: ServerContext,
   req: ListPredictionMarketsRequest,

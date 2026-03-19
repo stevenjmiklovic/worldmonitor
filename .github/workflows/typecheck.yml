@@ -5,7 +5,7 @@ on:
     paths-ignore:
       - 'scripts/**'
   push:
-    branches: [main]
+    branches: [sxs-main]
     paths-ignore:
       - 'scripts/**'
 

@@ -22,7 +22,7 @@ import {
 } from './_shared';
 
 interface AnomalySnapshot {
-  anomalies: TemporalAnomalyProto[];
+  anomalies: TemporalAnomaly[];
   trackedTypes: string[];
   computedAt: string;
 }
@@ -97,7 +97,7 @@ export async function listTemporalAnomalies(
       const weekday = now.getUTCDay();
       const month = now.getUTCMonth() + 1;
       const trackedTypes = Object.keys(COUNT_SOURCE_KEYS);
-      const anomalies: TemporalAnomalyProto[] = [];
+      const anomalies: TemporalAnomaly[] = [];
 
       const counts: Record<string, number> = {};
       for (const [type, sourceKey] of Object.entries(COUNT_SOURCE_KEYS)) {

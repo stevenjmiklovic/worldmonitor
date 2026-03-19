@@ -41,7 +41,7 @@ echo "Running MDX lint (Mintlify compatibility)..."
 node --test tests/mdx-lint.test.mjs || exit 1
 
 echo "Running proto freshness check..."
-if git diff --name-only origin/main -- proto/ src/generated/ docs/api/ Makefile | grep -q .; then
+if git diff --name-only @{push} -- proto/ src/generated/ docs/api/ Makefile | grep -q .; then
   if command -v buf >/dev/null 2>&1 || [ -x "$HOME/go/bin/buf" ]; then
     export PATH="$HOME/go/bin:$PATH"
   fi

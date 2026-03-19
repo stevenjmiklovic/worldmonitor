@@ -1,3 +1,7 @@
+import { logger } from '@/lib/logger';
+
+const storageLogger = logger.child({ module: 'Storage' });
+
 const DB_NAME = 'worldmonitor_db';
 const DB_VERSION = 1;
 
@@ -66,7 +70,7 @@ async function withTransaction<T>(
       if (err instanceof DOMException && err.name === 'InvalidStateError') {
         db = null;
         if (attempt === 0) continue;
-        console.warn('[Storage] IndexedDB connection closing after retry');
+        storageLogger.warn('IndexedDB connection closing after retry');
         if (mode === 'readwrite') throw new DOMException('IndexedDB write failed — connection closing', 'InvalidStateError');
         return undefined as T;
       }

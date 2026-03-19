@@ -1,10 +1,31 @@
-import type { InternetOutage, SocialUnrestEvent, MilitaryFlight, MilitaryFlightCluster, MilitaryVessel, MilitaryVesselCluster, USNIFleetReport, PanelConfig, MapLayers, NewsItem, MarketData, ClusteredEvent, CyberThreat, Monitor } from '@/types';
+import type { InternetOutage, SocialUnrestEvent, MilitaryFlight, MilitaryFlightCluster, MilitaryVessel, MilitaryVesselCluster, USNIFleetReport, PanelConfig, MapLayers, NewsItem, MarketData, ClusteredEvent, CyberThreat, Monitor, GameState } from '@/types';
 import type { AirportDelayAlert, PositionSample } from '@/services/aviation';
 import type { IranEvent } from '@/generated/client/worldmonitor/conflict/v1/service_client';
 import type { SanctionsPressureResult } from '@/services/sanctions-pressure';
 import type { RadiationWatchResult } from '@/services/radiation';
 import type { SecurityAdvisory } from '@/services/security-advisories';
 import type { Earthquake } from '@/services/earthquakes';
+import type { CountryBriefPanel } from '@/components/CountryBriefPanel';
+import type { CountryTimeline } from '@/components/CountryTimeline';
+import type { PlaybackControl } from '@/components';
+import type { ExportPanel } from '@/utils';
+import type { UnifiedSettings } from '@/components/UnifiedSettings';
+import type { PizzIntIndicator, LlmStatusIndicator } from '@/components';
+import type { ParsedMapUrlState } from '@/utils';
+import type { PositiveNewsFeedPanel } from '@/components/PositiveNewsFeedPanel';
+import type { CountersPanel } from '@/components/CountersPanel';
+import type { ProgressChartsPanel } from '@/components/ProgressChartsPanel';
+import type { BreakthroughsTickerPanel } from '@/components/BreakthroughsTickerPanel';
+import type { HeroSpotlightPanel } from '@/components/HeroSpotlightPanel';
+import type { GoodThingsDigestPanel } from '@/components/GoodThingsDigestPanel';
+import type { SpeciesComebackPanel } from '@/components/SpeciesComebackPanel';
+import type { RenewableEnergyPanel } from '@/components/RenewableEnergyPanel';
+import type { TvModeController } from '@/services/tv-mode';
+import type { BreakingNewsBanner } from '@/components/BreakingNewsBanner';
+import type { GameHudPanel } from '@/components/GameHudPanel';
+import type { GameBriefingPanel } from '@/components/GameBriefingPanel';
+import type { GameLogPanel } from '@/components/GameLogPanel';
+import type { CorrelationEngine } from '@/services/correlation-engine';
 
 export type { CountryBriefSignals } from '@/types';
 
@@ -75,6 +96,13 @@ export interface AppContext {
   renewablePanel: import('@/components/RenewableEnergyPanel').RenewableEnergyPanel | null;
   tvMode: import('@/services/tv-mode').TvModeController | null;
   happyAllItems: NewsItem[];
+
+  // Game variant state (The Great Game)
+  gameHudPanel: GameHudPanel | null;
+  gameBriefingPanel: GameBriefingPanel | null;
+  gameLogPanel: GameLogPanel | null;
+  gameState: GameState | null;
+
   isDestroyed: boolean;
   isPlaybackMode: boolean;
   isIdle: boolean;

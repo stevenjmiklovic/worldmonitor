@@ -2,32 +2,33 @@
 
 **Real-time global intelligence dashboard** — AI-powered news aggregation, geopolitical monitoring, and infrastructure tracking in a unified situational awareness interface.
 
-[![GitHub stars](https://img.shields.io/github/stars/koala73/worldmonitor?style=social)](https://github.com/koala73/worldmonitor/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/koala73/worldmonitor?style=social)](https://github.com/koala73/worldmonitor/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/stevenjmiklovic/worldmonitor?style=social)](https://github.com/stevenjmiklovic/worldmonitor/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/stevenjmiklovic/worldmonitor?style=social)](https://github.com/stevenjmiklovic/worldmonitor/network/members)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/re63kWKxaz)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Last commit](https://img.shields.io/github/last-commit/koala73/worldmonitor)](https://github.com/koala73/worldmonitor/commits/main)
-[![Latest release](https://img.shields.io/github/v/release/koala73/worldmonitor?style=flat)](https://github.com/koala73/worldmonitor/releases/latest)
+[![Last commit](https://img.shields.io/github/last-commit/stevenjmiklovic/worldmonitor)](https://github.com/stevenjmiklovic/worldmonitor/commits/main)
+[![Latest release](https://img.shields.io/github/v/release/stevenjmiklovic/worldmonitor?style=flat)](https://github.com/stevenjmiklovic/worldmonitor/releases/latest)
 
 <p align="center">
-  <a href="https://worldmonitor.app"><img src="https://img.shields.io/badge/Web_App-worldmonitor.app-blue?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Web App"></a>&nbsp;
-  <a href="https://tech.worldmonitor.app"><img src="https://img.shields.io/badge/Tech_Variant-tech.worldmonitor.app-0891b2?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Tech Variant"></a>&nbsp;
-  <a href="https://finance.worldmonitor.app"><img src="https://img.shields.io/badge/Finance_Variant-finance.worldmonitor.app-059669?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Finance Variant"></a>&nbsp;
-  <a href="https://commodity.worldmonitor.app"><img src="https://img.shields.io/badge/Commodity_Variant-commodity.worldmonitor.app-b45309?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Commodity Variant"></a>&nbsp;
-  <a href="https://happy.worldmonitor.app"><img src="https://img.shields.io/badge/Happy_Variant-happy.worldmonitor.app-f59e0b?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Happy Variant"></a>
+  <a href="https://sxs.exarcos.net"><img src="https://img.shields.io/badge/Web_App-sxs.exarcos.net-blue?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Web App"></a>&nbsp;
+  <a href="https://tech.sxs.exarcos.net"><img src="https://img.shields.io/badge/Tech_Variant-tech.sxs.exarcos.net-0891b2?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Tech Variant"></a>&nbsp;
+  <a href="https://finance.sxs.exarcos.net"><img src="https://img.shields.io/badge/Finance_Variant-finance.sxs.exarcos.net-059669?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Finance Variant"></a>&nbsp;
+  <a href="https://commodity.sxs.exarcos.net"><img src="https://img.shields.io/badge/Commodity_Variant-commodity.sxs.exarcos.net-b45309?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Commodity Variant"></a>&nbsp;
+  <a href="https://happy.sxs.exarcos.net"><img src="https://img.shields.io/badge/Happy_Variant-happy.sxs.exarcos.net-f59e0b?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Happy Variant"></a>&nbsp;
+  <a href="https://game.sxs.exarcos.net"><img src="https://img.shields.io/badge/Great_Game-game.sxs.exarcos.net-6d28d9?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Great Game Variant"></a>
 </p>
 
 <p align="center">
-  <a href="https://worldmonitor.app/api/download?platform=windows-exe"><img src="https://img.shields.io/badge/Download-Windows_(.exe)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows"></a>&nbsp;
-  <a href="https://worldmonitor.app/api/download?platform=macos-arm64"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS ARM"></a>&nbsp;
-  <a href="https://worldmonitor.app/api/download?platform=macos-x64"><img src="https://img.shields.io/badge/Download-macOS_Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS Intel"></a>&nbsp;
-  <a href="https://worldmonitor.app/api/download?platform=linux-appimage"><img src="https://img.shields.io/badge/Download-Linux_(.AppImage)-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux"></a>
+  <a href="https://sxs.exarcos.net/api/download?platform=windows-exe"><img src="https://img.shields.io/badge/Download-Windows_(.exe)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows"></a>&nbsp;
+  <a href="https://sxs.exarcos.net/api/download?platform=macos-arm64"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS ARM"></a>&nbsp;
+  <a href="https://sxs.exarcos.net/api/download?platform=macos-x64"><img src="https://img.shields.io/badge/Download-macOS_Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS Intel"></a>&nbsp;
+  <a href="https://sxs.exarcos.net/api/download?platform=linux-appimage"><img src="https://img.shields.io/badge/Download-Linux_(.AppImage)-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux"></a>
 </p>
 
 <p align="center">
   <a href="https://docs.worldmonitor.app"><strong>Documentation</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/koala73/worldmonitor/releases/latest"><strong>Releases</strong></a> &nbsp;·&nbsp;
+  <a href="https://github.com/stevenjmiklovic/worldmonitor/releases/latest"><strong>Releases</strong></a> &nbsp;·&nbsp;
   <a href="https://docs.worldmonitor.app/contributing"><strong>Contributing</strong></a>
 </p>
 
@@ -47,14 +48,14 @@
 - **Native desktop app** (Tauri 2) for macOS, Windows, and Linux
 - **21 languages** with native-language feeds and RTL support
 
-For the full feature list, architecture, data sources, and algorithms, see the **[documentation](https://docs.worldmonitor.app)**.
+For the full feature list, architecture, data sources, and algorithms, see the **[documentation](https://docs.sxs.exarcos.net)**.
 
 ---
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/koala73/worldmonitor.git
+git clone https://github.com/stevenjmiklovic/worldmonitor.git
 cd worldmonitor
 npm install
 npm run dev
@@ -65,13 +66,13 @@ Open [localhost:5173](http://localhost:5173). No environment variables required 
 For variant-specific development:
 
 ```bash
-npm run dev:tech       # tech.worldmonitor.app
-npm run dev:finance    # finance.worldmonitor.app
-npm run dev:commodity  # commodity.worldmonitor.app
-npm run dev:happy      # happy.worldmonitor.app
+npm run dev:tech       # tech.sxs.exarcos.net
+npm run dev:finance    # finance.sxs.exarcos.net
+npm run dev:commodity  # commodity.sxs.exarcos.net
+npm run dev:happy      # happy.sxs.exarcos.net
 ```
 
-See the **[self-hosting guide](https://docs.worldmonitor.app/getting-started)** for deployment options (Vercel, Docker, static).
+See the **[self-hosting guide](https://docs.sxs.exarcos.net/getting-started)** for deployment options (Vercel, Docker, static).
 
 ---
 
@@ -86,7 +87,7 @@ See the **[self-hosting guide](https://docs.worldmonitor.app/getting-started)** 
 | **Deployment** | Vercel Edge Functions (60+), Railway relay, Tauri, PWA |
 | **Caching** | Redis (Upstash), 3-tier cache, CDN, service worker |
 
-Full stack details in the **[architecture docs](https://docs.worldmonitor.app/architecture)**.
+Full stack details in the **[architecture docs](https://docs.sxs.exarcos.net/architecture)**.
 
 ---
 
@@ -120,12 +121,12 @@ Copyright (C) 2024-2026 Elie Habib. All rights reserved.
 
 ## Author
 
-**Elie Habib** — [GitHub](https://github.com/koala73)
+**Elie Habib** — [GitHub](https://github.com/stevenjmiklovic)
 
 ## Contributors
 
-<a href="https://github.com/koala73/worldmonitor/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=koala73/worldmonitor" />
+<a href="https://github.com/stevenjmiklovic/worldmonitor/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=stevenjmiklovic/worldmonitor" />
 </a>
 
 ## Security Acknowledgments
@@ -139,17 +140,17 @@ See our [Security Policy](./SECURITY.md) for responsible disclosure guidelines.
 ---
 
 <p align="center">
-  <a href="https://worldmonitor.app">worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://docs.worldmonitor.app">docs.worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://finance.worldmonitor.app">finance.worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://commodity.worldmonitor.app">commodity.worldmonitor.app</a>
+  <a href="https://sxs.exarcos.net">sxs.exarcos.net</a> &nbsp;·&nbsp;
+  <a href="https://docs.sxs.exarcos.net">docs.sxs.exarcos.net</a> &nbsp;·&nbsp;
+  <a href="https://finance.sxs.exarcos.net">finance.sxs.exarcos.net</a> &nbsp;·&nbsp;
+  <a href="https://commodity.sxs.exarcos.net">commodity.sxs.exarcos.net</a>
 </p>
 
 ## Star History
 
-<a href="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date">
+<a href="https://api.star-history.com/svg?repos=stevenjmiklovic/worldmonitor&type=Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date&type=Date&theme=dark" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=koala73/worldmonitor&type=Date&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=stevenjmiklovic/worldmonitor&type=Date&type=Date&theme=dark" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=stevenjmiklovic/worldmonitor&type=Date&type=Date" />
  </picture>
 </a>

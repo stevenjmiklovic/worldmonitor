@@ -3,7 +3,7 @@ import type { MapLayers } from '@/types';
 import { isDesktopRuntime } from '@/services/runtime';
 
 export type MapRenderer = 'flat' | 'globe';
-export type MapVariant = 'full' | 'tech' | 'finance' | 'happy' | 'commodity';
+export type MapVariant = 'full' | 'tech' | 'finance' | 'happy' | 'commodity' | 'game';
 
 const _desktop = isDesktopRuntime();
 
@@ -114,12 +114,20 @@ const VARIANT_LAYER_ORDER: Record<MapVariant, Array<keyof MapLayers>> = {
     'ais', 'economic', 'fires', 'climate',
     'natural', 'weather', 'outages', 'dayNight', 'weatherRadar',
   ],
+  game: [
+    'hotspots', 'conflicts',
+    'bases', 'nuclear', 'military',
+    'cables', 'pipelines', 'economic', 'waterways',
+    'protests', 'natural', 'weather',
+    'ciiChoropleth', 'dayNight',
+  ],
 };
 
 const SVG_ONLY_LAYERS: Partial<Record<MapVariant, Array<keyof MapLayers>>> = {
   full: ['sanctions'],
   finance: ['sanctions'],
   commodity: ['sanctions'],
+  game: ['sanctions'],
 };
 
 const I18N_PREFIX = 'components.deckgl.layers.';
