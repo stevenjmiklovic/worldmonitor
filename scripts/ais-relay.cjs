@@ -1799,7 +1799,7 @@ function aviationDetermineSeverity(avgDelay, delayedPct) {
 function fetchAviationStackSingle(apiKey, iata) {
   return new Promise((resolve) => {
     const today = new Date().toISOString().slice(0, 10);
-    const url = `http://api.aviationstack.com/v1/flights?access_key=${apiKey}&dep_iata=${iata}&flight_date=${today}&limit=100`;
+    const url = `https://api.aviationstack.com/v1/flights?access_key=${apiKey}&dep_iata=${iata}&flight_date=${today}&limit=100`;
     const req = http.get(url, {
       headers: { 'User-Agent': CHROME_UA },
       timeout: 5000,
