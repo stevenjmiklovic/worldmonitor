@@ -2,6 +2,9 @@ import type { MarketData, NewsItem } from '@/types';
 import type { MarketWatchlistEntry } from './market-watchlist';
 import { getMarketWatchlistEntries } from './market-watchlist';
 import type { SummarizationResult } from './summarization';
+import { logger } from '@/lib/logger';
+
+const dailyBriefLogger = logger.child({ module: 'DailyBrief' });
 
 export interface DailyMarketBriefItem {
   symbol: string;
@@ -359,7 +362,7 @@ export async function buildDailyMarketBrief(options: BuildDailyMarketBriefOption
         fallback = false;
       }
     } catch (err) {
-      console.warn('[DailyBrief] AI summarization failed, using rules-based fallback:', (err as Error).message);
+      dailyBriefLogger.warn('AI summarization failed, using rules-based fallback', err instanceof Error ? err : undefined);
     }
   }
 

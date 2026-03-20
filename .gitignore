@@ -61,3 +61,6 @@ api-cache.json
 verbose-mode.json
 skills-lock.json
 tmp/
+
+# Kiro
+.kiro

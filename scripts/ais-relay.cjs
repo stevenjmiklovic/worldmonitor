@@ -117,27 +117,31 @@ if (IS_PRODUCTION_RELAY && !RELAY_SHARED_SECRET && !ALLOW_UNAUTHENTICATED_RELAY)
 // ─────────────────────────────────────────────────────────────
 const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL || '';
 const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const isLocalRedisUrl = (u) => u.startsWith('http://localhost') || u.startsWith('http://127.0.0.1');
 const UPSTASH_ENABLED = !!(
   UPSTASH_REDIS_REST_URL &&
   UPSTASH_REDIS_REST_TOKEN &&
-  UPSTASH_REDIS_REST_URL.startsWith('https://')
+  (UPSTASH_REDIS_REST_URL.startsWith('https://') || isLocalRedisUrl(UPSTASH_REDIS_REST_URL))
 );
 const RELAY_ENV_PREFIX = process.env.RELAY_ENV ? `${process.env.RELAY_ENV}:` : '';
 const OREF_REDIS_KEY = `${RELAY_ENV_PREFIX}relay:oref:history:v1`;
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
-if (UPSTASH_REDIS_REST_URL && !UPSTASH_REDIS_REST_URL.startsWith('https://')) {
-  console.warn('[Relay] UPSTASH_REDIS_REST_URL must start with https:// — Redis disabled');
+if (UPSTASH_REDIS_REST_URL && !UPSTASH_REDIS_REST_URL.startsWith('https://') && !isLocalRedisUrl(UPSTASH_REDIS_REST_URL)) {
+  console.warn('[Relay] UPSTASH_REDIS_REST_URL must start with https:// (or http://localhost for local dev) — Redis disabled');
 }
 if (UPSTASH_ENABLED) {
   console.log(`[Relay] Upstash Redis enabled (key: ${OREF_REDIS_KEY})`);
 }
 
+// Use http module for local dev (http://localhost) and https for production
+const upstashHttp = (url) => url.protocol === 'https:' ? https : http;
+
 function upstashGet(key) {
   return new Promise((resolve) => {
     if (!UPSTASH_ENABLED) return resolve(null);
     const url = new URL(`/get/${encodeURIComponent(key)}`, UPSTASH_REDIS_REST_URL);
-    const req = https.request(url, {
+    const req = upstashHttp(url).request(url, {
       method: 'GET',
       headers: { Authorization: `Bearer ${UPSTASH_REDIS_REST_TOKEN}` },
       timeout: 5000,
@@ -167,7 +171,7 @@ function upstashSet(key, value, ttlSeconds) {
     if (!UPSTASH_ENABLED) return resolve(false);
     const url = new URL('/', UPSTASH_REDIS_REST_URL);
     const body = JSON.stringify(['SET', key, JSON.stringify(value), 'EX', String(ttlSeconds)]);
-    const req = https.request(url, {
+    const req = upstashHttp(url).request(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
@@ -223,7 +227,7 @@ function upstashMGet(keys) {
     if (!UPSTASH_ENABLED || keys.length === 0) return resolve([]);
     const url = new URL('/pipeline', UPSTASH_REDIS_REST_URL);
     const body = JSON.stringify(keys.map((k) => ['GET', k]));
-    const req = https.request(url, {
+    const req = upstashHttp(url).request(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
@@ -1796,7 +1800,7 @@ function fetchAviationStackSingle(apiKey, iata) {
   return new Promise((resolve) => {
     const today = new Date().toISOString().slice(0, 10);
     const url = `https://api.aviationstack.com/v1/flights?access_key=${apiKey}&dep_iata=${iata}&flight_date=${today}&limit=100`;
-    const req = https.get(url, {
+    const req = http.get(url, {
       headers: { 'User-Agent': CHROME_UA },
       timeout: 5000,
       family: 4,

@@ -3,6 +3,10 @@
 // Probes provider URLs with a fast request, caches results.
 // All LLM call sites check this before attempting expensive fetch calls.
 
+import { logger } from '../../src/lib/logger';
+
+const healthLogger = logger.child({ module: 'llm-health' });
+
 const PROBE_TIMEOUT_MS = 2_000;
 const CACHE_TTL_MS = 60_000; // re-probe every 60s
 
@@ -52,7 +56,7 @@ export async function isProviderAvailable(apiUrl: string): Promise<boolean> {
     cache.set(origin, { available, checkedAt: Date.now() });
     inFlight.delete(origin);
     if (!available) {
-      console.warn(`[llm-health] Provider unreachable: ${origin}`);
+      healthLogger.warn('Provider unreachable', { origin });
     }
     return available;
   });

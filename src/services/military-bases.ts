@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import {
   MilitaryServiceClient,
@@ -6,6 +7,8 @@ import {
   type MilitaryBaseCluster,
 } from '@/generated/client/worldmonitor/military/v1/service_client';
 import type { MilitaryBase, MilitaryBaseType, MilitaryBaseEnriched } from '@/types';
+
+const basesLogger = logger.child({ module: 'bases-svc' });
 
 const client = new MilitaryServiceClient(getRpcBaseUrl(), { fetch: (...args) => globalThis.fetch(...args) });
 
@@ -91,7 +94,7 @@ export async function fetchMilitaryBases(
       lastResult = result;
       return result;
     } catch (err) {
-      console.error('[bases-svc] error', err);
+      basesLogger.error('error', err instanceof Error ? err : undefined);
       return lastResult;
     } finally {
       pendingFetch = null;

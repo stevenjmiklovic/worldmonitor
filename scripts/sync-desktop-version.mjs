@@ -11,6 +11,7 @@ const repoRoot = path.resolve(scriptDir, '..');
 const packageJsonPath = path.join(repoRoot, 'package.json');
 const tauriConfPath = path.join(repoRoot, 'src-tauri', 'tauri.conf.json');
 const cargoTomlPath = path.join(repoRoot, 'src-tauri', 'Cargo.toml');
+const cargoLockPath = path.join(repoRoot, 'src-tauri', 'Cargo.lock');
 
 function updateCargoPackageVersion(cargoToml, targetVersion) {
   const packageSectionRegex = /\[package\][\s\S]*?(?=\n\[|$)/;
@@ -39,6 +40,30 @@ function updateCargoPackageVersion(cargoToml, targetVersion) {
   };
 }
 
+function updateCargoLockVersion(cargoLock, targetVersion) {
+  // Match the [[package]] entry for "world-monitor" and update its version field.
+  // Cargo.lock entries look like:
+  //   [[package]]
+  //   name = "world-monitor"
+  //   version = "2.6.1"
+  const entryRegex =
+    /(\[\[package\]\]\r?\n\s*name = "world-monitor"\r?\n\s*version = )"([^"]+)"/;
+  const match = cargoLock.match(entryRegex);
+  if (!match) {
+    throw new Error(
+      'Could not find world-monitor package entry in src-tauri/Cargo.lock',
+    );
+  }
+
+  const currentVersion = match[2];
+  if (currentVersion === targetVersion) {
+    return { changed: false, currentVersion, updatedLock: cargoLock };
+  }
+
+  const updatedLock = cargoLock.replace(entryRegex, `$1"${targetVersion}"`);
+  return { changed: true, currentVersion, updatedLock };
+}
+
 async function main() {
   const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'));
   const targetVersion = packageJson.version;
@@ -54,12 +79,18 @@ async function main() {
   const cargoToml = await readFile(cargoTomlPath, 'utf8');
   const cargoUpdate = updateCargoPackageVersion(cargoToml, targetVersion);
 
+  const cargoLock = await readFile(cargoLockPath, 'utf8');
+  const cargoLockUpdate = updateCargoLockVersion(cargoLock, targetVersion);
+
   const mismatches = [];
   if (tauriChanged) {
     mismatches.push(`src-tauri/tauri.conf.json (${tauriCurrentVersion} -> ${targetVersion})`);
   }
   if (cargoUpdate.changed) {
     mismatches.push(`src-tauri/Cargo.toml (${cargoUpdate.currentVersion} -> ${targetVersion})`);
+  }
+  if (cargoLockUpdate.changed) {
+    mismatches.push(`src-tauri/Cargo.lock (${cargoLockUpdate.currentVersion} -> ${targetVersion})`);
   }
 
   if (CHECK_ONLY) {
@@ -70,11 +101,13 @@ async function main() {
       }
       process.exit(1);
     }
-    console.log(`[version:check] OK. package.json, tauri.conf.json, and Cargo.toml are all ${targetVersion}.`);
+    console.log(
+      `[version:check] OK. package.json, tauri.conf.json, Cargo.toml, and Cargo.lock are all ${targetVersion}.`,
+    );
     return;
   }
 
-  if (!tauriChanged && !cargoUpdate.changed) {
+  if (!tauriChanged && !cargoUpdate.changed && !cargoLockUpdate.changed) {
     console.log(`[version:sync] No changes needed. All files already at ${targetVersion}.`);
     return;
   }
@@ -86,6 +119,10 @@ async function main() {
 
   if (cargoUpdate.changed) {
     await writeFile(cargoTomlPath, cargoUpdate.updatedToml, 'utf8');
+  }
+
+  if (cargoLockUpdate.changed) {
+    await writeFile(cargoLockPath, cargoLockUpdate.updatedLock, 'utf8');
   }
 
   console.log(`[version:sync] Synced desktop versions to ${targetVersion}.`);

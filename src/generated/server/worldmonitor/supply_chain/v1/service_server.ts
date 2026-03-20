@@ -81,6 +81,14 @@ export interface TransitDayCount {
   total: number;
 }
 
+export interface TransitDayCount {
+  date: string;
+  tanker: number;
+  cargo: number;
+  other: number;
+  total: number;
+}
+
 export interface GetCriticalMineralsRequest {
 }
 

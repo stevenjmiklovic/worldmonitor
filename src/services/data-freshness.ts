@@ -6,6 +6,9 @@
 
 import { getCSSColor } from '@/utils';
 import type { DataSourceId } from '@/types';
+import { logger } from '@/lib/logger';
+
+const freshnessLogger = logger.child({ module: 'DataFreshness' });
 
 export type { DataSourceId } from '@/types';
 
@@ -35,9 +38,9 @@ export interface DataFreshnessSummary {
 }
 
 // Thresholds in milliseconds
-const FRESH_THRESHOLD = 15 * 60 * 1000;      // 15 minutes
-const STALE_THRESHOLD = 2 * 60 * 60 * 1000;  // 2 hours
-const VERY_STALE_THRESHOLD = 6 * 60 * 60 * 1000; // 6 hours
+const FRESH_THRESHOLD = 20 * 60 * 1000;      // 20 minutes
+const STALE_THRESHOLD = 3 * 60 * 60 * 1000;  // 3 hours
+const VERY_STALE_THRESHOLD = 8 * 60 * 60 * 1000; // 8 hours
 
 // Core sources needed for meaningful risk assessment
 // Note: ACLED is optional since GDELT provides protest data as fallback
@@ -258,7 +261,7 @@ class DataFreshnessTracker {
       try {
         listener();
       } catch (e) {
-        console.error('[DataFreshness] Listener error:', e);
+        freshnessLogger.error('Listener error', e instanceof Error ? e : undefined);
       }
     }
   }

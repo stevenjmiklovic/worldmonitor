@@ -28,6 +28,7 @@ import {
 } from '@/services/runtime-config';
 import { getApiBaseUrl, isDesktopRuntime, resolveLocalApiPort, startSmartPollLoop, type SmartPollLoopHandle } from '@/services/runtime';
 import { tryInvokeTauri, invokeTauri } from '@/services/tauri-bridge';
+import { setLevel } from '@/lib/logger';
 import { escapeHtml } from '@/utils/sanitize';
 import { initI18n, t } from '@/services/i18n';
 import { applyStoredTheme } from '@/utils/theme-manager';
@@ -674,6 +675,7 @@ function initDiagnostics(): void {
     fetchDebugToggle.checked = localStorage.getItem('wm-debug-log') === '1';
     fetchDebugToggle.addEventListener('change', () => {
       localStorage.setItem('wm-debug-log', fetchDebugToggle.checked ? '1' : '0');
+      setLevel(fetchDebugToggle.checked ? 'debug' : 'info');
     });
   }
 

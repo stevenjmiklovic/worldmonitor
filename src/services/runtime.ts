@@ -1,4 +1,5 @@
 import { SITE_VARIANT } from '@/config/variant';
+import { setLevel } from '@/lib/logger';
 
 const ENV = (() => {
   try {
@@ -604,6 +605,11 @@ const TOKEN_TTL_MS = 5 * 60 * 1000;
 export function installRuntimeFetchPatch(): void {
   if (!isDesktopRuntime() || typeof window === 'undefined' || (window as unknown as Record<string, unknown>).__wmFetchPatched) {
     return;
+  }
+
+  // Sync logger level with debug flag (Req 3.1, 7.4)
+  if (localStorage.getItem('wm-debug-log') === '1') {
+    setLevel('debug');
   }
 
   const nativeFetch = window.fetch.bind(window);

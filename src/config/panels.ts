@@ -822,6 +822,135 @@ const COMMODITY_MOBILE_MAP_LAYERS: MapLayers = {
 };
 
 // ============================================
+// GAME VARIANT (The Great Game)
+// ============================================
+const GAME_PANELS: Record<string, PanelConfig> = {
+  map: { name: 'Strategic Map', enabled: true, priority: 1 },
+  'game-hud': { name: 'The Great Game — Command', enabled: true, priority: 1 },
+  'game-briefing': { name: 'Regional Intel', enabled: true, priority: 1 },
+  'game-log': { name: 'Event Log', enabled: true, priority: 1 },
+  'live-news': { name: 'World News', enabled: true, priority: 2 },
+};
+
+const GAME_MAP_LAYERS: MapLayers = {
+  gpsJamming: false,
+  satellites: false,
+
+  conflicts: true,
+  bases: true,
+  cables: true,
+  pipelines: false,
+  hotspots: true,
+  ais: false,
+  nuclear: true,
+  irradiators: false,
+  sanctions: true,
+  weather: false,
+  economic: true,
+  waterways: true,
+  outages: false,
+  cyberThreats: false,
+  datacenters: false,
+  protests: true,
+  flights: false,
+  military: true,
+  natural: true,
+  spaceports: false,
+  minerals: false,
+  fires: false,
+  // Data source layers
+  ucdpEvents: false,
+  displacement: false,
+  climate: false,
+  // Tech layers (disabled in game variant)
+  startupHubs: false,
+  cloudRegions: false,
+  accelerators: false,
+  techHQs: false,
+  techEvents: false,
+  // Finance layers (disabled in game variant)
+  stockExchanges: false,
+  financialCenters: false,
+  centralBanks: false,
+  commodityHubs: false,
+  gulfInvestments: false,
+  // Happy variant layers (disabled)
+  positiveEvents: false,
+  kindness: false,
+  happiness: false,
+  speciesRecovery: false,
+  renewableInstallations: false,
+  tradeRoutes: false,
+  iranAttacks: false,
+  ciiChoropleth: true,
+  dayNight: true,
+  webcams: false,
+  // Commodity layers (disabled in game variant)
+  miningSites: false,
+  processingPlants: false,
+  commodityPorts: false,
+};
+
+const GAME_MOBILE_MAP_LAYERS: MapLayers = {
+  gpsJamming: false,
+  satellites: false,
+
+  conflicts: true,
+  bases: false,
+  cables: false,
+  pipelines: false,
+  hotspots: true,
+  ais: false,
+  nuclear: false,
+  irradiators: false,
+  sanctions: false,
+  weather: false,
+  economic: true,
+  waterways: false,
+  outages: false,
+  cyberThreats: false,
+  datacenters: false,
+  protests: false,
+  flights: false,
+  military: true,
+  natural: true,
+  spaceports: false,
+  minerals: false,
+  fires: false,
+  // Data source layers
+  ucdpEvents: false,
+  displacement: false,
+  climate: false,
+  // Tech layers (disabled)
+  startupHubs: false,
+  cloudRegions: false,
+  accelerators: false,
+  techHQs: false,
+  techEvents: false,
+  // Finance layers (disabled)
+  stockExchanges: false,
+  financialCenters: false,
+  centralBanks: false,
+  commodityHubs: false,
+  gulfInvestments: false,
+  // Happy variant layers (disabled)
+  positiveEvents: false,
+  kindness: false,
+  happiness: false,
+  speciesRecovery: false,
+  renewableInstallations: false,
+  tradeRoutes: false,
+  iranAttacks: false,
+  ciiChoropleth: false,
+  dayNight: false,
+  webcams: false,
+  // Commodity layers (disabled)
+  miningSites: false,
+  processingPlants: false,
+  commodityPorts: false,
+};
+
+// ============================================
 // VARIANT-AWARE EXPORTS
 // ============================================
 export const DEFAULT_PANELS = SITE_VARIANT === 'happy' 
@@ -832,7 +961,9 @@ export const DEFAULT_PANELS = SITE_VARIANT === 'happy'
       ? FINANCE_PANELS 
       : SITE_VARIANT === 'commodity'
         ? COMMODITY_PANELS
-        : FULL_PANELS;
+        : SITE_VARIANT === 'game'
+          ? GAME_PANELS
+          : FULL_PANELS;
 
 export const DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy' 
   ? HAPPY_MAP_LAYERS 
@@ -842,7 +973,9 @@ export const DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy'
       ? FINANCE_MAP_LAYERS 
       : SITE_VARIANT === 'commodity'
         ? COMMODITY_MAP_LAYERS
-        : FULL_MAP_LAYERS;
+        : SITE_VARIANT === 'game'
+          ? GAME_MAP_LAYERS
+          : FULL_MAP_LAYERS;
 
 export const MOBILE_DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy' 
   ? HAPPY_MOBILE_MAP_LAYERS 
@@ -852,7 +985,9 @@ export const MOBILE_DEFAULT_MAP_LAYERS = SITE_VARIANT === 'happy'
       ? FINANCE_MOBILE_MAP_LAYERS 
       : SITE_VARIANT === 'commodity'
         ? COMMODITY_MOBILE_MAP_LAYERS
-        : FULL_MOBILE_MAP_LAYERS;
+        : SITE_VARIANT === 'game'
+          ? GAME_MOBILE_MAP_LAYERS
+          : FULL_MOBILE_MAP_LAYERS;
 
 /** Maps map-layer toggle keys to their data-freshness source IDs (single source of truth). */
 export const LAYER_TO_SOURCE: Partial<Record<keyof MapLayers, DataSourceId[]>> = {
@@ -1002,6 +1137,12 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
     labelKey: 'header.panelCatHappyPlanet',
     panelKeys: ['species', 'renewable', 'giving'],
     variants: ['happy'],
+  },
+  // Game variant (The Great Game)
+  gameSimulation: {
+    labelKey: 'header.panelCatGameSimulation',
+    panelKeys: ['game-hud', 'game-briefing', 'game-log'],
+    variants: ['game'],
   },
 };
 

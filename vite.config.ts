@@ -2,13 +2,13 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { resolve, dirname, extname } from 'path';
 import { mkdir, readFile, writeFile } from 'fs/promises';
+import { readFileSync } from 'fs';
 import { brotliCompress } from 'zlib';
 import { promisify } from 'util';
 import pkg from './package.json';
 import { VARIANT_META, type VariantMeta } from './src/config/variant-meta';
 
 // Env-dependent constants moved inside defineConfig function
-
 
 const brotliCompressAsync = promisify(brotliCompress);
 const BROTLI_EXTENSIONS = new Set(['.js', '.mjs', '.css', '.html', '.svg', '.json', '.txt', '.xml', '.wasm']);
@@ -276,10 +276,11 @@ function sebufApiPlugin(): Plugin {
   return {
     name: 'sebuf-api',
     configureServer(server) {
-      // Invalidate cached router on HMR updates to server/ files
+      // Invalidate cached router on HMR updates to server/ or api/ files
       server.watcher.on('change', (file) => {
-        if (file.includes('/server/') || file.includes('/src/generated/server/')) {
+        if (file.includes('/server/') || file.includes('/src/generated/server/') || file.includes('/api/')) {
           cachedRouter = null;
+          cachedCorsMod = null;
         }
       });
 

@@ -1,5 +1,8 @@
 import { startSmartPollLoop, toApiUrl, type SmartPollLoopHandle } from '@/services/runtime';
 import { translateText } from '@/services/summarization';
+import { logger } from '@/lib/logger';
+
+const orefLogger = logger.child({ module: 'OREF' });
 
 export interface OrefAlert {
   id: string;
@@ -46,7 +49,7 @@ async function ensureLocationMapLoaded(): Promise<void> {
   if (locationMapPromise) { await locationMapPromise; return; }
   locationMapPromise = import('./oref-locations').then(m => {
     locationTranslator = m.translateLocation;
-  }).catch(() => { locationMapPromise = null; console.warn('[OREF] Failed to load location translations, will retry'); });
+  }).catch(() => { locationMapPromise = null; orefLogger.warn('Failed to load location translations, will retry'); });
   await locationMapPromise;
 }
 
@@ -270,7 +273,7 @@ export async function fetchOrefHistory(): Promise<OrefHistoryResponse> {
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) {
-      console.warn('[OREF History] HTTP', res.status);
+      orefLogger.warn('HTTP error', { endpoint: 'history', status: res.status });
       return { configured: false, history: [], historyCount24h: 0, timestamp: new Date().toISOString(), error: `HTTP ${res.status}` };
     }
     const data: OrefHistoryResponse = await res.json();

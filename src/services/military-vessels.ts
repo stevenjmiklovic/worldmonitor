@@ -13,6 +13,9 @@ import {
   initAisStream,
   type AisPositionData,
 } from './maritime';
+import { logger } from '@/lib/logger';
+
+const militaryVesselsLogger = logger.child({ module: 'Military Vessels' });
 import { fetchUSNIFleetReport, mergeUSNIWithAIS } from './usni-fleet';
 
 // Cache for API responses
@@ -599,7 +602,7 @@ export async function fetchMilitaryVessels(): Promise<{
         return merged;
       }
     } catch (e) {
-      console.warn('[Military Vessels] USNI merge failed, using AIS only:', (e as Error).message);
+      militaryVesselsLogger.warn('USNI merge failed, using AIS only', e instanceof Error ? e : undefined);
     }
 
     return { vessels, clusters: aisClusters };

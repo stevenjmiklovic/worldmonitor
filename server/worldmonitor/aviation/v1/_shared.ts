@@ -379,7 +379,10 @@ export function getRelayBaseUrl(): string | null {
 }
 
 export function getRelayHeaders(_extra: Record<string, string> = {}): Record<string, string> {
-  const headers: Record<string, string> = { 'User-Agent': CHROME_UA };
+  const headers: Record<string, string> = {
+    'User-Agent': CHROME_UA,
+    'ngrok-skip-browser-warning': '1',
+  };
   const relaySecret = process.env.RELAY_SHARED_SECRET;
   if (relaySecret) {
     const relayHeader = (process.env.RELAY_AUTH_HEADER || 'x-relay-key').toLowerCase();

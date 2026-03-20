@@ -55,7 +55,7 @@ export function mapErrorToResponse(error: unknown, _req: Request): Response {
     if (statusCode >= 500) {
       // Log upstream response body (truncated) for debugging (M-4 fix)
       const apiBody = 'body' in error ? String((error as any).body).slice(0, 500) : '';
-      console.error(`[error-mapper] ${statusCode}:`, error.message, apiBody ? `| body: ${apiBody}` : '');
+      console.error('[error-mapper] Upstream error:', statusCode, apiBody);
     }
 
     return jsonMessageResponse(message, statusCode, statusCode === 429 ? { retryAfter: body.retryAfter } : undefined);
