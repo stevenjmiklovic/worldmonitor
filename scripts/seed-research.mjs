@@ -14,7 +14,7 @@ loadEnvFile(import.meta.url);
 
 const ARXIV_TTL = 3600;
 const HN_TTL = 600;
-const TECH_EVENTS_TTL = 21600;
+const TECH_EVENTS_TTL = 28800; // 8h — outlives maxStaleMin:480 for health buffer
 const TRENDING_TTL = 3600;
 
 // ─── arXiv Papers ───
@@ -176,7 +176,7 @@ async function fetchTechEvents() {
         if (!title) continue;
         const dateMatch = desc.match(/on\s+(\w+\s+\d{1,2},?\s+\d{4})/i);
         let startDate = null;
-        if (dateMatch) { const p = new Date(dateMatch[1]); if (!isNaN(p.getTime())) startDate = p.toISOString().split('T')[0]; }
+        if (dateMatch) { const p = new Date(dateMatch[1]); if (!Number.isNaN(p.getTime())) startDate = p.toISOString().split('T')[0]; }
         if (!startDate || startDate < today) continue;
         events.push({
           id: guid || `dev-${title.slice(0, 20)}`, title, type: 'conference',
@@ -227,38 +227,61 @@ async function fetchTechEvents() {
 
 // ─── Trending Repos ───
 
+const OSSINSIGHT_LANG_MAP = { python: 'Python', javascript: 'JavaScript', typescript: 'TypeScript' };
+
+async function fetchTrendingFromOSSInsight(lang) {
+  const ossLang = OSSINSIGHT_LANG_MAP[lang] || lang;
+  const resp = await fetch(
+    `https://api.ossinsight.io/v1/trends/repos/?language=${ossLang}&period=past_24_hours`,
+    {
+      headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!resp.ok) return null;
+  const json = await resp.json();
+  const rows = json?.data?.rows;
+  if (!Array.isArray(rows)) return null;
+  return rows.slice(0, 50).map(r => ({
+    fullName: r.repo_name || '', description: r.description || '',
+    language: r.primary_language || lang, stars: r.stars || 0,
+    starsToday: 0, forks: r.forks || 0,
+    url: r.repo_name ? `https://github.com/${r.repo_name}` : '',
+  }));
+}
+
+async function fetchTrendingFromGitHubSearch(lang) {
+  const since = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+  const resp = await fetch(
+    `https://api.github.com/search/repositories?q=language:${lang}+created:>${since}&sort=stars&order=desc&per_page=50`,
+    {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  if (!Array.isArray(data?.items)) return null;
+  return data.items.map(r => ({
+    fullName: r.full_name, description: r.description || '',
+    language: r.language || '', stars: r.stargazers_count || 0,
+    starsToday: 0, forks: r.forks_count || 0,
+    url: r.html_url,
+  }));
+}
+
 async function fetchTrendingRepos() {
   const languages = ['python', 'javascript', 'typescript'];
   const results = {};
 
   for (const lang of languages) {
     try {
-      let data;
-      const primaryUrl = `https://api.gitterapp.com/repositories?language=${lang}&since=daily`;
-      const resp = await fetch(primaryUrl, {
-        headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (resp.ok) {
-        data = await resp.json();
-      } else {
-        const fallback = await fetch(`https://gh-trending-api.herokuapp.com/repositories/${lang}?since=daily`, {
-          headers: { Accept: 'application/json', 'User-Agent': CHROME_UA },
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (fallback.ok) data = await fallback.json();
-      }
-
-      if (!Array.isArray(data)) { console.warn(`  Trending ${lang}: not an array`); continue; }
-      const repos = data.slice(0, 50).map(r => ({
-        fullName: `${r.author}/${r.name}`, description: r.description || '',
-        language: r.language || '', stars: r.stars || 0,
-        starsToday: r.currentPeriodStars || 0, forks: r.forks || 0,
-        url: r.url || `https://github.com/${r.author}/${r.name}`,
-      }));
+      let repos = await fetchTrendingFromOSSInsight(lang);
+      if (!repos) repos = await fetchTrendingFromGitHubSearch(lang);
+      if (!repos || repos.length === 0) { console.warn(`  Trending ${lang}: no data from any source`); continue; }
 
       const cacheKey = `research:trending:v1:${lang}:daily:50`;
-      if (repos.length > 0) results[cacheKey] = { repos, pagination: undefined };
+      results[cacheKey] = { repos, pagination: undefined };
       console.log(`  Trending ${lang}: ${repos.length} repos`);
       await sleep(500);
     } catch (e) {
@@ -287,6 +310,11 @@ async function fetchAll() {
     trending: trending.status === 'fulfilled' ? trending.value : null,
   };
 
+  if (arxiv.status === 'rejected') console.warn(`  arXiv failed: ${arxiv.reason?.message || arxiv.reason}`);
+  if (hn.status === 'rejected') console.warn(`  HN failed: ${hn.reason?.message || hn.reason}`);
+  if (techEvents.status === 'rejected') console.warn(`  TechEvents failed: ${techEvents.reason?.message || techEvents.reason}`);
+  if (trending.status === 'rejected') console.warn(`  Trending failed: ${trending.reason?.message || trending.reason}`);
+
   if (!allData.arxiv && !allData.hn && !allData.trending) throw new Error('All research fetches failed');
 
   // Write secondary keys BEFORE returning (runSeed calls process.exit after primary write)
@@ -313,6 +341,6 @@ runSeed('research', 'arxiv-hn-trending', 'research:arxiv:v1:cs.AI::50', fetchAll
   ttlSeconds: ARXIV_TTL,
   sourceVersion: 'arxiv-hn-gitter',
 }).catch((err) => {
-  console.error('FATAL:', err.message || err);
+  const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);
   process.exit(1);
 });

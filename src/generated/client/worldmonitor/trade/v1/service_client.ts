@@ -36,6 +36,7 @@ export interface GetTariffTrendsResponse {
   datapoints: TariffDataPoint[];
   fetchedAt: string;
   upstreamUnavailable: boolean;
+  effectiveTariffRate?: EffectiveTariffRate;
 }
 
 export interface TariffDataPoint {
@@ -46,6 +47,14 @@ export interface TariffDataPoint {
   tariffRate: number;
   boundRate: number;
   indicatorCode: string;
+}
+
+export interface EffectiveTariffRate {
+  sourceName: string;
+  sourceUrl: string;
+  observationPeriod: string;
+  updatedAt: string;
+  tariffRate: number;
 }
 
 export interface GetTradeFlowsRequest {
@@ -93,6 +102,24 @@ export interface TradeBarrier {
   status: string;
   dateDistributed: string;
   sourceUrl: string;
+}
+
+export interface GetCustomsRevenueRequest {
+}
+
+export interface GetCustomsRevenueResponse {
+  months: CustomsRevenueMonth[];
+  fetchedAt: string;
+  upstreamUnavailable: boolean;
+}
+
+export interface CustomsRevenueMonth {
+  recordDate: string;
+  fiscalYear: number;
+  calendarYear: number;
+  calendarMonth: number;
+  monthlyAmountBillions: number;
+  fytdAmountBillions: number;
 }
 
 export interface FieldViolation {
@@ -249,6 +276,29 @@ export class TradeServiceClient {
     }
 
     return await resp.json() as GetTradeBarriersResponse;
+  }
+
+  async getCustomsRevenue(req: GetCustomsRevenueRequest, options?: TradeServiceCallOptions): Promise<GetCustomsRevenueResponse> {
+    let path = "/api/trade/v1/get-customs-revenue";
+    const url = this.baseURL + path;
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...this.defaultHeaders,
+      ...options?.headers,
+    };
+
+    const resp = await this.fetchFn(url, {
+      method: "GET",
+      headers,
+      signal: options?.signal,
+    });
+
+    if (!resp.ok) {
+      return this.handleError(resp);
+    }
+
+    return await resp.json() as GetCustomsRevenueResponse;
   }
 
   private async handleError(resp: Response): Promise<never> {

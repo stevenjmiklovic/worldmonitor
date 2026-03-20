@@ -215,6 +215,6 @@ runSeed('economic', 'bis', KEYS.policy, fetchAll, {
   if (seedData.exchange) await writeExtraKey(KEYS.exchange, seedData.exchange, TTL);
   if (seedData.credit) await writeExtraKey(KEYS.credit, seedData.credit, TTL);
 }).catch((err) => {
-  console.error('FATAL:', err.message || err);
+  const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);
   process.exit(1);
 });

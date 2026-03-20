@@ -58,6 +58,8 @@ async function main() {
     warmPing('Nav Warnings', '/api/maritime/v1/list-navigational-warnings'),
   ]);
 
+  for (const r of results) { if (r.status === 'rejected') console.warn(`  Warm-ping failed: ${r.reason?.message || r.reason}`); }
+
   const ok = results.filter(r => r.status === 'fulfilled' && r.value).length;
   const total = results.length;
   const duration = Date.now() - start;

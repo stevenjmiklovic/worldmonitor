@@ -12,7 +12,7 @@ import { loadEnvFile, CHROME_UA, getRedisCredentials, logSeedResult, extendExist
 
 loadEnvFile(import.meta.url);
 
-const RPC_URL = 'https://worldmonitor.app/api/infrastructure/v1/list-service-statuses';
+const RPC_URL = 'https://api.worldmonitor.app/api/infrastructure/v1/list-service-statuses';
 const CANONICAL_KEY = 'infra:service-statuses:v1';
 
 async function warmPing() {
@@ -38,7 +38,7 @@ async function warmPing() {
     data = await resp.json();
   } catch (err) {
     console.error(`  FETCH FAILED: ${err.message || err}`);
-    await extendExistingTtl([CANONICAL_KEY], 7200);
+    await extendExistingTtl([CANONICAL_KEY, 'seed-meta:infra:service-statuses'], 7200);
     console.log(`\n=== Failed gracefully (${Math.round(Date.now() - startMs)}ms) ===`);
     process.exit(0);
   }

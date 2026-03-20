@@ -28,16 +28,11 @@ async function fetchTier(tier: string, signal: AbortSignal): Promise<void> {
 }
 
 export async function fetchBootstrapData(): Promise<void> {
-  // Each tier gets its own abort controller so a slow response in one
-  // doesn't kill the other. Timeouts are generous — bootstrap data is
-  // critical for instant panel rendering.
   const fastCtrl = new AbortController();
   const slowCtrl = new AbortController();
-  // Desktop needs longer timeouts: fetch patch resolves port + token via IPC,
-  // then sidecar proxies to cloud. The extra hops easily exceed 3s.
   const desktop = isDesktopRuntime();
-  const fastTimeout = setTimeout(() => fastCtrl.abort(), desktop ? 8_000 : 3_000);
-  const slowTimeout = setTimeout(() => slowCtrl.abort(), desktop ? 12_000 : 5_000);
+  const fastTimeout = setTimeout(() => fastCtrl.abort(), desktop ? 5_000 : 1_200);
+  const slowTimeout = setTimeout(() => slowCtrl.abort(), desktop ? 8_000 : 1_800);
   try {
     await Promise.all([
       fetchTier('slow', slowCtrl.signal),

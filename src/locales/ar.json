@@ -790,7 +790,10 @@
       "yes": "نعم",
       "no": "لا",
       "vol": "الحجم",
-      "closes": "يغلق"
+      "closes": "يغلق",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "صحة الربط",
@@ -921,8 +924,8 @@
       "nuclear": "نووي"
     },
     "community": {
-      "joinDiscussion": "انضم إلى النقاش",
-      "openDiscussion": "فتح النقاش",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "عدم العرض مجدداً",
       "sectionLabel": "المجتمع"
     },
@@ -1666,6 +1669,13 @@
     "supplyChain": {
       "chokepoints": "نقاط الاختناق",
       "fredKeyMissing": "مفتاح FRED API مطلوب لأسعار الشحن — أضفه في الإعدادات. نقاط الاختناق والمعادن متاحة بدون مفتاح.",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "المعدن",
       "minerals": "المعادن",
       "noChokepoints": "جارٍ تحميل بيانات نقاط الاختناق...",

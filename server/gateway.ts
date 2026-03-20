@@ -25,23 +25,30 @@ export const serverOptions: ServerOptions = { onError: mapErrorToResponse };
 // NOTE: This map is shared across all domain bundles (~3KB). Kept centralised for
 // single-source-of-truth maintainability; the size is negligible vs handler code.
 
-type CacheTier = 'fast' | 'medium' | 'slow' | 'static' | 'daily' | 'no-store';
+type CacheTier = 'fast' | 'medium' | 'slow' | 'slow-browser' | 'static' | 'daily' | 'no-store';
 
+// Browser-only cache: no `public` or `s-maxage` so Cloudflare (which ignores
+// Vary: Origin) does NOT cache these responses. CF sits in front of api.worldmonitor.app
+// and would otherwise pin ACAO: worldmonitor.app on the cached response, breaking CORS
+// for preview deployments. Vercel CDN caching is handled separately by CDN-Cache-Control.
 const TIER_HEADERS: Record<CacheTier, string> = {
-  fast: 'public, s-maxage=300, stale-while-revalidate=60, stale-if-error=600',
-  medium: 'public, s-maxage=600, stale-while-revalidate=120, stale-if-error=900',
-  slow: 'public, s-maxage=1800, stale-while-revalidate=300, stale-if-error=3600',
-  static: 'public, s-maxage=7200, stale-while-revalidate=600, stale-if-error=14400',
-  daily: 'public, s-maxage=86400, stale-while-revalidate=7200, stale-if-error=172800',
+  fast: 'max-age=60, stale-while-revalidate=60, stale-if-error=600',
+  medium: 'max-age=120, stale-while-revalidate=120, stale-if-error=900',
+  slow: 'max-age=300, stale-while-revalidate=300, stale-if-error=3600',
+  'slow-browser': 'max-age=300, stale-while-revalidate=60, stale-if-error=1800',
+  static: 'max-age=600, stale-while-revalidate=600, stale-if-error=14400',
+  daily: 'max-age=3600, stale-while-revalidate=7200, stale-if-error=172800',
   'no-store': 'no-store',
 };
 
-// Cloudflare-specific cache TTLs — more aggressive than s-maxage since CF can
-// revalidate via ETag/If-None-Match without full payload transfer.
+// Vercel CDN-specific cache TTLs — CDN-Cache-Control overrides Cache-Control for
+// Vercel's own edge cache, so Vercel can still cache aggressively (and respects
+// Vary: Origin correctly) while CF sees no public s-maxage and passes through.
 const TIER_CDN_CACHE: Record<CacheTier, string | null> = {
   fast: 'public, s-maxage=600, stale-while-revalidate=300, stale-if-error=1200',
   medium: 'public, s-maxage=1200, stale-while-revalidate=600, stale-if-error=1800',
   slow: 'public, s-maxage=3600, stale-while-revalidate=900, stale-if-error=7200',
+  'slow-browser': 'public, s-maxage=900, stale-while-revalidate=60, stale-if-error=1800',
   static: 'public, s-maxage=14400, stale-while-revalidate=3600, stale-if-error=28800',
   daily: 'public, s-maxage=86400, stale-while-revalidate=14400, stale-if-error=172800',
   'no-store': null,
@@ -90,6 +97,9 @@ const RPC_CACHE_TIER: Record<string, CacheTier> = {
   '/api/giving/v1/get-giving-summary': 'static',
   '/api/intelligence/v1/get-country-intel-brief': 'static',
   '/api/climate/v1/list-climate-anomalies': 'static',
+  '/api/sanctions/v1/list-sanctions-pressure': 'static',
+  '/api/radiation/v1/list-radiation-observations': 'slow',
+  '/api/thermal/v1/list-thermal-escalations': 'slow',
   '/api/research/v1/list-tech-events': 'static',
   '/api/military/v1/get-usni-fleet-report': 'static',
   '/api/conflict/v1/list-ucdp-events': 'static',
@@ -104,11 +114,13 @@ const RPC_CACHE_TIER: Record<string, CacheTier> = {
   '/api/trade/v1/get-trade-flows': 'static',
   '/api/trade/v1/get-trade-barriers': 'static',
   '/api/trade/v1/get-trade-restrictions': 'static',
+  '/api/trade/v1/get-customs-revenue': 'static',
   '/api/economic/v1/list-world-bank-indicators': 'static',
   '/api/economic/v1/get-energy-capacity': 'static',
   '/api/supply-chain/v1/get-critical-minerals': 'daily',
   '/api/military/v1/get-aircraft-details': 'static',
   '/api/military/v1/get-wingbits-status': 'static',
+  '/api/military/v1/get-wingbits-live-flight': 'no-store',
 
   '/api/military/v1/list-military-flights': 'slow',
   '/api/market/v1/list-etf-flows': 'slow',
@@ -127,6 +139,7 @@ const RPC_CACHE_TIER: Record<string, CacheTier> = {
   '/api/news/v1/list-feed-digest': 'slow',
   '/api/intelligence/v1/classify-event': 'static',
   '/api/intelligence/v1/get-country-facts': 'daily',
+  '/api/intelligence/v1/list-security-advisories': 'slow',
   '/api/news/v1/summarize-article-cache': 'slow',
 
   '/api/imagery/v1/search-imagery': 'static',
@@ -270,11 +283,19 @@ export function createDomainGateway(
       }
     }
 
-    // Propagate correlation ID on the response (Req 5.3)
+    // Propagate correlation ID on the response
     mergedHeaders.set('X-Correlation-ID', correlationId);
 
-    if (response.status === 200 && request.method === 'GET') {
-      if (mergedHeaders.get('X-No-Cache')) {
+    // For GET 200 responses: read body once for cache-header decisions + ETag
+    if (response.status === 200 && request.method === 'GET' && response.body) {
+      const bodyBytes = await response.arrayBuffer();
+
+      // Skip CDN caching for upstream-unavailable / empty responses so CF
+      // doesn't serve stale error data for hours.
+      const bodyStr = new TextDecoder().decode(bodyBytes);
+      const isUpstreamUnavailable = bodyStr.includes('"upstreamUnavailable":true');
+
+      if (mergedHeaders.get('X-No-Cache') || isUpstreamUnavailable) {
         mergedHeaders.set('Cache-Control', 'no-store');
         mergedHeaders.set('X-Cache-Tier', 'no-store');
       } else {
@@ -285,19 +306,18 @@ export function createDomainGateway(
         const cdnCache = TIER_CDN_CACHE[tier];
         if (cdnCache) mergedHeaders.set('CDN-Cache-Control', cdnCache);
         mergedHeaders.set('X-Cache-Tier', tier);
+
+        // Keep per-origin ACAO (already set from corsHeaders above) and preserve Vary: Origin.
+        // ACAO: * with no Vary would collapse all origins into one cache entry, bypassing
+        // isDisallowedOrigin() for cache hits — Vercel CDN serves s-maxage responses without
+        // re-invoking the function, so a disallowed origin could read a cached ACAO: * response.
       }
-    }
-    mergedHeaders.delete('X-No-Cache');
-    if (!new URL(request.url).searchParams.has('_debug')) {
-      mergedHeaders.delete('X-Cache-Tier');
-    }
+      mergedHeaders.delete('X-No-Cache');
+      if (!new URL(request.url).searchParams.has('_debug')) {
+        mergedHeaders.delete('X-Cache-Tier');
+      }
 
-    // Log response completion (Req 6.2)
-    reqLogger.info('Request completed', { method: request.method, path: pathname, status: response.status, durationMs: Math.round(performance.now() - startTime) });
 
-    // ETag / 304 Not Modified — avoid resending unchanged data
-    if (response.status === 200 && request.method === 'GET' && response.body) {
-      const bodyBytes = await response.arrayBuffer();
       // FNV-1a inspired fast hash — good enough for cache validation
       let hash = 2166136261;
       const view = new Uint8Array(bodyBytes);
@@ -318,6 +338,13 @@ export function createDomainGateway(
         statusText: response.statusText,
         headers: mergedHeaders,
       });
+    }
+
+    if (response.status === 200 && request.method === 'GET') {
+      if (mergedHeaders.get('X-No-Cache')) {
+        mergedHeaders.set('Cache-Control', 'no-store');
+      }
+      mergedHeaders.delete('X-No-Cache');
     }
 
     return new Response(response.body, {

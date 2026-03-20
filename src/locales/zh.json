@@ -771,6 +771,13 @@
       "spikeAlert": "检测到异常飙升 — 费率显著高于52周均值（周度）",
       "warnings": "条警告",
       "aisDisruptions": "AIS中断",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "矿产",
       "topProducers": "主要生产国",
       "risk": "风险",
@@ -817,7 +824,10 @@
       "yes": "是",
       "no": "否",
       "vol": "交易量",
-      "closes": "截止"
+      "closes": "截止",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "锚定健康度",
@@ -948,8 +958,8 @@
       "nuclear": "核设施"
     },
     "community": {
-      "joinDiscussion": "加入讨论",
-      "openDiscussion": "打开讨论",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "不再显示",
       "sectionLabel": "社区"
     },

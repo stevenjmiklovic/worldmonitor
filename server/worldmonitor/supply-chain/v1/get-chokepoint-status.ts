@@ -12,7 +12,7 @@ import type {
   AisDisruption,
 } from '../../../../src/generated/server/worldmonitor/maritime/v1/service_server';
 
-import { cachedFetchJson, getCachedJson } from '../../../_shared/redis';
+import { cachedFetchJson, getCachedJson, setCachedJson } from '../../../_shared/redis';
 import { listNavigationalWarnings } from '../../maritime/v1/list-navigational-warnings';
 import { getVesselSnapshot } from '../../maritime/v1/get-vessel-snapshot';
 import type { PortWatchData } from './_portwatch-upstream';
@@ -337,16 +337,10 @@ async function fetchChokepointData(): Promise<ChokepointFetchResult> {
     if (anomaly.signal) {
       descriptions.push(`Traffic down ${anomaly.dropPct}% vs 30-day baseline, vessels may be transiting dark (AIS off)`);
     }
-    if (ts?.riskSummary) {
-      descriptions.push(ts.riskSummary);
-    }
     if (!threatConfigFresh) {
       descriptions.push(THREAT_CONFIG_STALE_NOTE);
     }
-    if (matchedWarnings.length > 0 || matchedDisruptions.length > 0) {
-      descriptions.push(`Navigational warnings: ${matchedWarnings.length}`);
-      descriptions.push(`AIS vessel disruptions: ${matchedDisruptions.length}`);
-    } else if (!cp.threatDescription && !anomaly.signal) {
+    if (descriptions.length === 0) {
       descriptions.push('No active disruptions');
     }
 
@@ -394,7 +388,9 @@ export async function getChokepointStatus(
       async () => {
         const { chokepoints, upstreamUnavailable } = await fetchChokepointData();
         if (upstreamUnavailable) return null;
-        return { chokepoints, fetchedAt: new Date().toISOString(), upstreamUnavailable };
+        const response = { chokepoints, fetchedAt: new Date().toISOString(), upstreamUnavailable };
+        setCachedJson('seed-meta:supply_chain:chokepoints', { fetchedAt: Date.now(), recordCount: chokepoints.length }, 604800).catch(() => {});
+        return response;
       },
     );
 

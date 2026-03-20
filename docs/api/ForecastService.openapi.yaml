@@ -103,6 +103,8 @@ components:
                     type: string
                 scenario:
                     type: string
+                feedSummary:
+                    type: string
                 probability:
                     type: number
                     format: double
@@ -138,6 +140,8 @@ components:
                     $ref: '#/components/schemas/Perspectives'
                 projections:
                     $ref: '#/components/schemas/Projections'
+                caseFile:
+                    $ref: '#/components/schemas/ForecastCase'
         ForecastSignal:
             type: object
             properties:
@@ -190,5 +194,136 @@ components:
                     type: number
                     format: double
                 d30:
+                    type: number
+                    format: double
+        ForecastCase:
+            type: object
+            properties:
+                supportingEvidence:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ForecastCaseEvidence'
+                counterEvidence:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ForecastCaseEvidence'
+                triggers:
+                    type: array
+                    items:
+                        type: string
+                actorLenses:
+                    type: array
+                    items:
+                        type: string
+                baseCase:
+                    type: string
+                escalatoryCase:
+                    type: string
+                contrarianCase:
+                    type: string
+                changeSummary:
+                    type: string
+                changeItems:
+                    type: array
+                    items:
+                        type: string
+                actors:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ForecastActor'
+                worldState:
+                    $ref: '#/components/schemas/ForecastWorldState'
+                branches:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ForecastBranch'
+        ForecastCaseEvidence:
+            type: object
+            properties:
+                type:
+                    type: string
+                summary:
+                    type: string
+                weight:
+                    type: number
+                    format: double
+        ForecastActor:
+            type: object
+            properties:
+                id:
+                    type: string
+                name:
+                    type: string
+                category:
+                    type: string
+                role:
+                    type: string
+                objectives:
+                    type: array
+                    items:
+                        type: string
+                constraints:
+                    type: array
+                    items:
+                        type: string
+                likelyActions:
+                    type: array
+                    items:
+                        type: string
+                influenceScore:
+                    type: number
+                    format: double
+        ForecastWorldState:
+            type: object
+            properties:
+                summary:
+                    type: string
+                activePressures:
+                    type: array
+                    items:
+                        type: string
+                stabilizers:
+                    type: array
+                    items:
+                        type: string
+                keyUnknowns:
+                    type: array
+                    items:
+                        type: string
+        ForecastBranch:
+            type: object
+            properties:
+                kind:
+                    type: string
+                title:
+                    type: string
+                summary:
+                    type: string
+                outcome:
+                    type: string
+                projectedProbability:
+                    type: number
+                    format: double
+                rounds:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ForecastBranchRound'
+        ForecastBranchRound:
+            type: object
+            properties:
+                round:
+                    type: integer
+                    format: int32
+                focus:
+                    type: string
+                developments:
+                    type: array
+                    items:
+                        type: string
+                actorMoves:
+                    type: array
+                    items:
+                        type: string
+                probabilityShift:
                     type: number
                     format: double

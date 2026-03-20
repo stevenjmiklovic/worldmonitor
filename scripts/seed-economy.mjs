@@ -15,7 +15,7 @@ const FRED_KEY_PREFIX = 'economic:fred:v1';
 const FRED_TTL = 3600;
 const ENERGY_TTL = 3600;
 const CAPACITY_TTL = 86400;
-const MACRO_TTL = 900;
+const MACRO_TTL = 1800;
 
 const FRED_SERIES = ['WALCL', 'FEDFUNDS', 'T10Y2Y', 'UNRATE', 'CPIAUCSL', 'DGS10', 'VIXCLS', 'GDP', 'M2SL', 'DCOILWTICO'];
 
@@ -96,7 +96,7 @@ async function fetchCapacityForSource(sourceCode, apiKey, startYear) {
   for (const row of rows) {
     if (row.period == null || row.capability == null) continue;
     const year = parseInt(row.period, 10);
-    if (isNaN(year)) continue;
+    if (Number.isNaN(year)) continue;
     const mw = typeof row.capability === 'number' ? row.capability : parseFloat(String(row.capability));
     if (!Number.isFinite(mw)) continue;
     yearTotals.set(year, (yearTotals.get(year) ?? 0) + mw);
@@ -112,24 +112,28 @@ async function fetchEnergyCapacity() {
 
   const series = [];
   for (const source of CAPACITY_SOURCES) {
-    let yearTotals;
-    if (source.code === 'COL') {
-      yearTotals = await fetchCapacityForSource('COL', apiKey, startYear);
-      if (yearTotals.size === 0) {
-        const merged = new Map();
-        for (const sub of COAL_SUBTYPES) {
-          const subMap = await fetchCapacityForSource(sub, apiKey, startYear);
-          for (const [year, mw] of subMap) merged.set(year, (merged.get(year) ?? 0) + mw);
+    try {
+      let yearTotals;
+      if (source.code === 'COL') {
+        yearTotals = await fetchCapacityForSource('COL', apiKey, startYear);
+        if (yearTotals.size === 0) {
+          const merged = new Map();
+          for (const sub of COAL_SUBTYPES) {
+            const subMap = await fetchCapacityForSource(sub, apiKey, startYear);
+            for (const [year, mw] of subMap) merged.set(year, (merged.get(year) ?? 0) + mw);
+          }
+          yearTotals = merged;
         }
-        yearTotals = merged;
+      } else {
+        yearTotals = await fetchCapacityForSource(source.code, apiKey, startYear);
       }
-    } else {
-      yearTotals = await fetchCapacityForSource(source.code, apiKey, startYear);
+      const data = Array.from(yearTotals.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([year, mw]) => ({ year, capacityMw: mw }));
+      series.push({ energySource: source.code, name: source.name, data });
+    } catch (e) {
+      console.warn(`  EIA ${source.code}: ${e.message}`);
     }
-    const data = Array.from(yearTotals.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([year, mw]) => ({ year, capacityMw: mw }));
-    series.push({ energySource: source.code, name: source.name, data });
   }
   console.log(`  Energy capacity: ${series.length} sources`);
   return { series };
@@ -168,7 +172,7 @@ async function fetchFredSeries() {
 
       const obsData = await obsResp.value.json();
       const observations = (obsData.observations || [])
-        .map((o) => { const v = parseFloat(o.value); return isNaN(v) || o.value === '.' ? null : { date: o.date, value: v }; })
+        .map((o) => { const v = parseFloat(o.value); return Number.isNaN(v) || o.value === '.' ? null : { date: o.date, value: v }; })
         .filter(Boolean)
         .reverse();
 
@@ -371,6 +375,11 @@ async function fetchAll() {
   const fr = fredResults.status === 'fulfilled' ? fredResults.value : null;
   const ms = macroSignals.status === 'fulfilled' ? macroSignals.value : null;
 
+  if (energyPrices.status === 'rejected') console.warn(`  EnergyPrices failed: ${energyPrices.reason?.message || energyPrices.reason}`);
+  if (energyCapacity.status === 'rejected') console.warn(`  EnergyCapacity failed: ${energyCapacity.reason?.message || energyCapacity.reason}`);
+  if (fredResults.status === 'rejected') console.warn(`  FRED failed: ${fredResults.reason?.message || fredResults.reason}`);
+  if (macroSignals.status === 'rejected') console.warn(`  MacroSignals failed: ${macroSignals.reason?.message || macroSignals.reason}`);
+
   if (!ep && !fr && !ms) throw new Error('All economic fetches failed');
 
   // Write secondary keys BEFORE returning (runSeed calls process.exit after primary write)
@@ -382,7 +391,7 @@ async function fetchAll() {
     }
   }
 
-  if (ms && !ms.unavailable) await writeExtraKeyWithMeta(KEYS.macroSignals, ms, MACRO_TTL, ms.totalCount ?? 0);
+  if (ms && !ms.unavailable && ms.totalCount > 0) await writeExtraKeyWithMeta(KEYS.macroSignals, ms, MACRO_TTL, ms.totalCount ?? 0);
 
   return ep || { prices: [] };
 }
@@ -396,6 +405,6 @@ runSeed('economic', 'energy-prices', KEYS.energyPrices, fetchAll, {
   ttlSeconds: ENERGY_TTL,
   sourceVersion: 'eia-fred-macro',
 }).catch((err) => {
-  console.error('FATAL:', err.message || err);
+  const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);
   process.exit(1);
 });

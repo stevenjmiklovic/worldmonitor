@@ -114,16 +114,16 @@ describe('GlobeMap AIS ship traffic markers', () => {
 // 3. dayNight toggle excluded via layer catalog (renderers: ['flat'])
 // ========================================================================
 
-describe('dayNight toggle excluded on globe via catalog', () => {
+describe('dayNight disabled on globe', () => {
   const src = readSrc('src/components/GlobeMap.ts');
 
-  it('dayNight exclusion is documented via catalog comment', () => {
-    assert.match(src, /dayNight toggle excluded by catalog/,
-      'GlobeMap should note dayNight exclusion via layer catalog');
+  it('setLayers forces dayNight to false', () => {
+    assert.match(src, /dayNight:\s*false/,
+      'GlobeMap should force dayNight: false (globe does not support day/night overlay)');
   });
 
-  it('setLayers copies incoming layers without dayNight override', () => {
-    assert.match(src, /this\.layers = \{ \.\.\.layers \};/,
-      'setLayers should spread incoming layers without forcing dayNight');
+  it('hideLayerToggle is called for dayNight', () => {
+    assert.match(src, /hideLayerToggle\(['"]dayNight['"]\)/,
+      'GlobeMap should hide the dayNight toggle from UI');
   });
 });

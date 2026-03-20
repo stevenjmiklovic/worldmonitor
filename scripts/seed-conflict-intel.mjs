@@ -203,7 +203,7 @@ async function fetchPizzintStatus() {
   const open = locations.filter(l => !l.isClosedNow);
   const spikes = locations.filter(l => l.isSpike).length;
   const avgPop = open.length > 0 ? open.reduce((s, l) => s + l.currentPopularity, 0) / open.length : 0;
-  let adjusted = Math.min(100, avgPop + spikes * 10);
+  const adjusted = Math.min(100, avgPop + spikes * 10);
   let defconLevel = 5, defconLabel = 'Normal Activity';
   if (adjusted >= 85) { defconLevel = 1; defconLabel = 'Maximum Activity'; }
   else if (adjusted >= 70) { defconLevel = 2; defconLabel = 'High Activity'; }
@@ -260,7 +260,12 @@ async function fetchAll() {
   const pi = pizzint.status === 'fulfilled' ? pizzint.value : null;
   const gd = gdelt.status === 'fulfilled' ? gdelt.value : null;
 
-  if (!ac && !pi) throw new Error('All conflict/intel fetches failed');
+  if (acled.status === 'rejected') console.warn(`  ACLED failed: ${acled.reason?.message || acled.reason}`);
+  if (hapi.status === 'rejected') console.warn(`  HAPI failed: ${hapi.reason?.message || hapi.reason}`);
+  if (pizzint.status === 'rejected') console.warn(`  PizzINT failed: ${pizzint.reason?.message || pizzint.reason}`);
+  if (gdelt.status === 'rejected') console.warn(`  GDELT failed: ${gdelt.reason?.message || gdelt.reason}`);
+
+  if (!ac && !ha && !pi) throw new Error('All conflict/intel fetches failed');
 
   // Write secondary keys BEFORE returning (runSeed calls process.exit after primary write)
   if (ha) { for (const [cc, data] of Object.entries(ha)) await writeExtraKeyWithMeta(`${HAPI_CACHE_KEY_PREFIX}:${cc}`, data, HAPI_TTL, 1); }
@@ -271,7 +276,7 @@ async function fetchAll() {
 }
 
 function validate(data) {
-  return data?.events?.length > 0;
+  return data != null && Array.isArray(data.events);
 }
 
 runSeed('conflict', 'acled-intel', ACLED_CACHE_KEY, fetchAll, {
@@ -279,6 +284,6 @@ runSeed('conflict', 'acled-intel', ACLED_CACHE_KEY, fetchAll, {
   ttlSeconds: ACLED_TTL,
   sourceVersion: 'acled-hapi-pizzint',
 }).catch((err) => {
-  console.error('FATAL:', err.message || err);
+  const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);
   process.exit(1);
 });

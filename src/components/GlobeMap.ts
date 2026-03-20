@@ -48,6 +48,7 @@ import { isAllowedPreviewUrl } from '@/utils/imagery-preview';
 import { getCategoryStyle } from '@/services/webcams';
 import { pinWebcam, isPinned } from '@/services/webcams/pinned-store';
 import type { WebcamEntry, WebcamCluster } from '@/generated/client/worldmonitor/webcam/v1/service_client';
+import type { RadiationObservation } from '@/services/radiation';
 
 const SAT_COUNTRY_COLORS: Record<string, string> = { CN: '#ff2020', RU: '#ff8800', US: '#4488ff', EU: '#44cc44', KR: '#aa66ff', IN: '#ff66aa', TR: '#ff4466', OTHER: '#ccccff' };
 const SAT_TYPE_EMOJI: Record<string, string> = { sar: '\u{1F4E1}', optical: '\u{1F4F7}', military: '\u{1F396}', sigint: '\u{1F4FB}' };
@@ -231,6 +232,27 @@ interface EarthquakeMarker extends BaseMarker {
   place: string;
   magnitude: number;
 }
+interface RadiationMarker extends BaseMarker {
+  _kind: 'radiation';
+  id: string;
+  location: string;
+  country: string;
+  source: RadiationObservation['source'];
+  contributingSources: RadiationObservation['contributingSources'];
+  value: number;
+  unit: string;
+  observedAt: Date;
+  freshness: RadiationObservation['freshness'];
+  baselineValue: number;
+  delta: number;
+  zScore: number;
+  severity: 'normal' | 'elevated' | 'spike';
+  confidence: RadiationObservation['confidence'];
+  corroborated: boolean;
+  conflictingSources: boolean;
+  convertedFromCpm: boolean;
+  sourceCount: number;
+}
 interface EconomicMarker extends BaseMarker {
   _kind: 'economic';
   id: string;
@@ -380,7 +402,7 @@ type GlobeMarker =
   | CyberMarker | FireMarker | ProtestMarker
   | UcdpMarker | DisplacementMarker | ClimateMarker | GpsJamMarker | TechMarker
   | ConflictZoneMarker | MilBaseMarker | NuclearSiteMarker | IrradiatorSiteMarker | SpaceportSiteMarker
-  | EarthquakeMarker | EconomicMarker | DatacenterMarker | WaterwayMarker | MineralMarker
+  | EarthquakeMarker | RadiationMarker | EconomicMarker | DatacenterMarker | WaterwayMarker | MineralMarker
   | FlightDelayMarker | NotamRingMarker | CableAdvisoryMarker | RepairShipMarker | AisDisruptionMarker
   | NewsLocationMarker | FlashMarker | SatelliteMarker | SatFootprintMarker | ImagerySceneMarker
   | WebcamMarkerData | WebcamClusterData;
@@ -434,6 +456,7 @@ export class GlobeMap {
   private flights: FlightMarker[] = [];
   private vessels: VesselMarker[] = [];
   private vesselData: Map<string, MilitaryVessel> = new Map();
+  private flightData: Map<string, MilitaryFlight> = new Map();
   private clusterMarkers: ClusterMarker[] = [];
   private clusterData: Map<string, MilitaryVesselCluster> = new Map();
   private popup: MapPopup | null = null;
@@ -455,6 +478,7 @@ export class GlobeMap {
   private irradiatorSiteMarkers: IrradiatorSiteMarker[] = [];
   private spaceportSiteMarkers: SpaceportSiteMarker[] = [];
   private earthquakeMarkers: EarthquakeMarker[] = [];
+  private radiationMarkers: RadiationMarker[] = [];
   private economicMarkers: EconomicMarker[] = [];
   private datacenterMarkers: DatacenterMarker[] = [];
   private waterwayMarkers: WaterwayMarker[] = [];
@@ -854,7 +878,8 @@ export class GlobeMap {
     // Navigate to initial view
     this.setView(this.currentView);
 
-    // dayNight toggle excluded by catalog (renderers: ['flat'])
+    this.layers.dayNight = false;
+    this.hideLayerToggle('dayNight');
 
     // Flush any data that arrived before init completed
     this.flushMarkers();
@@ -970,6 +995,18 @@ export class GlobeMap {
       const c = severityColors[d.severity] ?? '#88aaff';
       el.innerHTML = GlobeMap.wrapHit(`<div style="font-size:9px;color:${c};text-shadow:0 0 4px ${c}88;font-weight:bold;">⚡</div>`);
       el.title = d.headline;
+    } else if (d._kind === 'radiation') {
+      const c = d.severity === 'spike' ? '#ff3030' : '#ffaa00';
+      const ring = d.severity === 'spike'
+        ? `<div style="position:absolute;inset:-5px;border-radius:50%;border:2px solid ${c}66;${this.pulseStyle('1.8s')}"></div>`
+        : '';
+      const confirmRing = d.corroborated
+        ? '<div style="position:absolute;inset:-9px;border-radius:50%;border:1px dashed #7dd3fc88;"></div>'
+        : '';
+      el.innerHTML = GlobeMap.wrapHit(
+        `<div style="position:relative;display:inline-flex;align-items:center;justify-content:center;">${ring}${confirmRing}<div style="font-size:11px;color:${c};text-shadow:0 0 5px ${c}88;opacity:${d.confidence === 'low' ? 0.75 : 1};">☢</div></div>`
+      );
+      el.title = `${d.location} · ${d.severity} · ${d.confidence}`;
     } else if (d._kind === 'natural') {
       const typeIcons: Record<string, string> = {
         earthquakes: '〽', volcanoes: '🌋', severeStorms: '🌀',
@@ -1168,6 +1205,20 @@ export class GlobeMap {
       });
     }
 
+    if (d._kind === 'flight' && this.popup) {
+      const flight = this.flightData.get(d.id);
+      if (flight) {
+        const aRect = anchor.getBoundingClientRect();
+        const cRect = this.container.getBoundingClientRect();
+        const x = aRect.left - cRect.left + aRect.width / 2;
+        const y = aRect.top - cRect.top;
+        this.hideTooltip();
+        this.popup.show({ type: 'militaryFlight', data: flight, x, y });
+        this.popup.loadWingbitsLiveFlight(flight.hexCode);
+        return;
+      }
+    }
+
     if (d._kind === 'vessel' && this.popup) {
       const vessel = this.vesselData.get(d.id);
       if (vessel) {
@@ -1199,6 +1250,41 @@ export class GlobeMap {
       // Fly to cluster and zoom in (reduce altitude by 60%)
       this.globe.pointOfView({ lat: d._lat, lng: d._lng, altitude: pov.altitude * 0.4 }, 800);
     }
+    if (d._kind === 'radiation' && this.popup) {
+      const aRect = anchor.getBoundingClientRect();
+      const cRect = this.container.getBoundingClientRect();
+      const x = aRect.left - cRect.left + aRect.width / 2;
+      const y = aRect.top - cRect.top;
+      this.hideTooltip();
+      this.popup.show({
+        type: 'radiation',
+        data: {
+          id: d.id,
+          source: d.source,
+          contributingSources: d.contributingSources,
+          location: d.location,
+          country: d.country,
+          lat: d._lat,
+          lon: d._lng,
+          value: d.value,
+          unit: d.unit,
+          observedAt: d.observedAt,
+          freshness: d.freshness,
+          baselineValue: d.baselineValue,
+          delta: d.delta,
+          zScore: d.zScore,
+          severity: d.severity,
+          confidence: d.confidence,
+          corroborated: d.corroborated,
+          conflictingSources: d.conflictingSources,
+          convertedFromCpm: d.convertedFromCpm,
+          sourceCount: d.sourceCount,
+        },
+        x,
+        y,
+      });
+      return;
+    }
     this.showMarkerTooltip(d, anchor);
   }
 
@@ -1214,7 +1300,7 @@ export class GlobeMap {
       'font-size:11px',
       'font-family:monospace',
       'color:#d4d4d4',
-      'max-width:240px',
+      'max-width:280px',
       'z-index:1000',
       'pointer-events:auto',
       'line-height:1.5',
@@ -1227,13 +1313,18 @@ export class GlobeMap {
     let html = '';
     if (d._kind === 'conflict') {
       html = `<span style="color:#ff5050;font-weight:bold;">⚔ ${esc(d.location)}</span>` +
-             (d.fatalities ? `<br><span style="opacity:.7;">Casualties: ${d.fatalities}</span>` : '');
+             (d.eventType ? `<br><span style="opacity:.7;">${esc(d.eventType)}</span>` : '') +
+             (d.fatalities ? `<br><span style="opacity:.5;">Casualties: ${d.fatalities}</span>` : '');
     } else if (d._kind === 'hotspot') {
       const sc = ['', '#88ff44', '#ffdd00', '#ffaa00', '#ff6600', '#ff2020'][d.escalationScore] ?? '#ffaa00';
       html = `<span style="color:${sc};font-weight:bold;">🎯 ${esc(d.name)}</span>` +
              `<br><span style="opacity:.7;">Escalation: ${d.escalationScore}/5</span>`;
     } else if (d._kind === 'flight') {
-      html = `<span style="font-weight:bold;">✈ ${esc(d.callsign)}</span><br><span style="opacity:.7;">${esc(d.type)}</span>`;
+      const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+      const compass = dirs[Math.round(((d.heading ?? 0) % 360 + 360) % 360 / 22.5) % 16];
+      html = `<span style="font-weight:bold;">✈ ${esc(d.callsign)}</span>` +
+             `<br><span style="opacity:.7;">${esc(d.type)}</span>` +
+             `<br><span style="opacity:.5;">Heading: ${compass} (${Math.round(d.heading ?? 0)}°)</span>`;
     } else if (d._kind === 'vessel') {
       const deployStatus = d.usniDeploymentStatus && d.usniDeploymentStatus !== 'unknown'
         ? ` <span style="opacity:.6;font-size:10px;">[${esc(d.usniDeploymentStatus.toUpperCase().replace('-', ' '))}]</span>`
@@ -1277,6 +1368,12 @@ export class GlobeMap {
       const wc = d.severity === 'Extreme' ? '#ff0044' : d.severity === 'Severe' ? '#ff6600' : '#88aaff';
       html = `<span style="color:${wc};font-weight:bold;">⚡ ${esc(d.severity)}</span>` +
              `<br><span style="opacity:.7;white-space:normal;display:block;">${esc(d.headline.slice(0, 90))}</span>`;
+    } else if (d._kind === 'radiation') {
+      const rc = d.severity === 'spike' ? '#ff3030' : '#ffaa00';
+      html = `<span style="color:${rc};font-weight:bold;">☢ ${esc(d.severity.toUpperCase())}</span>` +
+             `<br><span style="opacity:.7;">${esc(d.location)}, ${esc(d.country)}</span>` +
+             `<br><span style="opacity:.5;">${d.value.toFixed(1)} ${esc(d.unit)} · ${d.delta >= 0 ? '+' : ''}${d.delta.toFixed(1)} vs baseline</span>` +
+             `<br><span style="opacity:.55;font-size:10px;">${esc(d.confidence.toUpperCase())}${d.corroborated ? ' · CONFIRMED' : ''}${d.conflictingSources ? ' · CONFLICT' : ''}</span>`;
     } else if (d._kind === 'natural') {
       html = `<span style="font-weight:bold;">${esc(d.title.slice(0, 60))}</span>` +
              `<br><span style="opacity:.7;">${esc(d.category)}</span>`;
@@ -1321,7 +1418,7 @@ export class GlobeMap {
       const gc = d.level === 'high' ? '#ff2020' : '#ff8800';
       html = `<span style="color:${gc};font-weight:bold;">📡 GPS Jamming</span>` +
              `<br><span style="opacity:.7;">Level: ${esc(d.level)}</span>` +
-             `<br><span style="opacity:.5;">NP avg: ${d.npAvg.toFixed(2)}</span>`;
+             `<br><span style="opacity:.5;">Avg satellites visible: ${d.npAvg.toFixed(1)}</span>`;
     } else if (d._kind === 'tech') {
       html = `<span style="color:#44aaff;font-weight:bold;">💻 ${esc(d.title.slice(0, 50))}</span>` +
              `<br><span style="opacity:.7;">${esc(d.country)}</span>` +
@@ -1434,7 +1531,8 @@ export class GlobeMap {
       html = '';
     }
     el.innerHTML = `<div style="padding-right:16px;position:relative;">${closeBtn}${html}</div>`;
-    if (d._kind === 'satellite') el.style.maxWidth = '300px';
+    const wideKinds = new Set(['satellite', 'flightDelay', 'conflictZone', 'cableAdvisory']);
+    if (wideKinds.has(d._kind)) el.style.maxWidth = '300px';
     el.querySelector('button')?.addEventListener('click', () => this.hideTooltip());
 
     if (d._kind === 'webcam') {
@@ -1550,7 +1648,8 @@ export class GlobeMap {
 
     this.tooltipEl = el;
     if (this.tooltipHideTimer) clearTimeout(this.tooltipHideTimer);
-    const hideDelay = d._kind === 'satellite' ? 6000 : d._kind === 'webcam' ? 8000 : d._kind === 'webcam-cluster' ? 12000 : 3500;
+    const richKinds = new Set(['satellite', 'flightDelay', 'cableAdvisory', 'conflictZone', 'spaceport', 'economic', 'datacenter', 'imageryScene', 'repairShip', 'aisDisruption']);
+    const hideDelay = d._kind === 'webcam' ? 8000 : d._kind === 'webcam-cluster' ? 12000 : richKinds.has(d._kind) ? 6000 : 3500;
     this.tooltipHideTimer = setTimeout(() => this.hideTooltip(), hideDelay);
 
     if (d._kind === 'webcam-cluster') {
@@ -1821,6 +1920,7 @@ export class GlobeMap {
       markers.push(...this.naturalMarkers);
       markers.push(...this.earthquakeMarkers);
     }
+    if (this.layers.radiationWatch) markers.push(...this.radiationMarkers);
     if (this.layers.economic) markers.push(...this.economicMarkers);
     if (this.layers.datacenters) markers.push(...this.datacenterMarkers);
     if (this.layers.waterways) markers.push(...this.waterwayMarkers);
@@ -2095,6 +2195,8 @@ export class GlobeMap {
   }
 
   public setMilitaryFlights(flights: MilitaryFlight[]): void {
+    this.flightData.clear();
+    for (const f of flights) this.flightData.set(f.id, f);
     this.flights = flights.map(f => ({
       _kind: 'flight' as const,
       _lat: f.lat,
@@ -2297,7 +2399,7 @@ export class GlobeMap {
 
   public setLayers(layers: MapLayers): void {
     const prev = this.layers;
-    this.layers = { ...layers };
+    this.layers = { ...layers, dayNight: false };
     let needMarkers = false, needArcs = false, needPaths = false, needPolygons = false;
     for (const k of Object.keys(layers) as (keyof MapLayers)[]) {
       if (prev[k] === layers[k]) continue;
@@ -2327,6 +2429,7 @@ export class GlobeMap {
   }
 
   public enableLayer(layer: keyof MapLayers): void {
+    if (layer === 'dayNight') return;
     if (this.layers[layer]) return;
     (this.layers as any)[layer] = true;
     const toggle = this.layerTogglesEl?.querySelector(`.layer-toggle[data-layer="${layer}"] input`) as HTMLInputElement | null;
@@ -2563,6 +2666,34 @@ export class GlobeMap {
       }));
     this.flushMarkers();
   }
+
+  public setRadiationObservations(observations: RadiationObservation[]): void {
+    this.radiationMarkers = (observations ?? []).map((observation) => ({
+      _kind: 'radiation' as const,
+      _lat: observation.lat,
+      _lng: observation.lon,
+      id: observation.id,
+      location: observation.location,
+      country: observation.country,
+      source: observation.source,
+      contributingSources: observation.contributingSources,
+      value: observation.value,
+      unit: observation.unit,
+      observedAt: observation.observedAt,
+      freshness: observation.freshness,
+      baselineValue: observation.baselineValue,
+      delta: observation.delta,
+      zScore: observation.zScore,
+      severity: observation.severity,
+      confidence: observation.confidence,
+      corroborated: observation.corroborated,
+      conflictingSources: observation.conflictingSources,
+      convertedFromCpm: observation.convertedFromCpm,
+      sourceCount: observation.sourceCount,
+    }));
+    this.flushMarkers();
+  }
+
   public setImageryScenes(scenes: ImageryScene[]): void {
     const valid = (scenes ?? []).filter(s => {
       try {
@@ -3225,6 +3356,7 @@ export class GlobeMap {
   public destroy(): void {
     this.popup?.hide();
     this.popup = null;
+    this.flightData.clear();
     this.vesselData.clear();
     this.clusterData.clear();
     this.container.removeEventListener('contextmenu', this.handleContextMenu);

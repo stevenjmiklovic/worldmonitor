@@ -5,7 +5,7 @@ import { loadEnvFile, runSeed, getRedisCredentials } from './_seed-utils.mjs';
 loadEnvFile(import.meta.url);
 
 const CANONICAL_KEY = 'correlation:cards-bootstrap:v1';
-const CACHE_TTL = 600;
+const CACHE_TTL = 1200; // 20min — outlives maxStaleMin:15 with buffer (cron runs every 5min)
 
 const INPUT_KEYS = [
   'military:flights:v1',
@@ -788,6 +788,6 @@ runSeed('correlation', 'cards', CANONICAL_KEY, computeCorrelation, {
     transform: (data) => data[ek.key.split(':')[1]],
   })),
 }).catch((err) => {
-  console.error('FATAL:', err.message || err);
+  const _cause = err.cause ? ` (cause: ${err.cause.message || err.cause.code || err.cause})` : ''; console.error('FATAL:', (err.message || err) + _cause);
   process.exit(1);
 });

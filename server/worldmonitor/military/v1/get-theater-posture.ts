@@ -2,27 +2,18 @@ import type {
   ServerContext,
   GetTheaterPostureRequest,
   GetTheaterPostureResponse,
-  TheaterPosture,
 } from '../../../../src/generated/server/worldmonitor/military/v1/service_server';
 
-import { getCachedJson, setCachedJson, cachedFetchJson } from '../../../_shared/redis';
-import {
-  isMilitaryCallsign,
-  isMilitaryHex,
-  detectAircraftType,
-  POSTURE_THEATERS,
-  UPSTREAM_TIMEOUT_MS,
-  type RawFlight,
-} from './_shared';
-import { CHROME_UA } from '../../../_shared/constants';
+import { getCachedJson } from '../../../_shared/redis';
 
 const CACHE_KEY = 'theater-posture:sebuf:v1';
-const STALE_CACHE_KEY = 'theater-posture:sebuf:stale:v1';
+const STALE_CACHE_KEY = 'theater_posture:sebuf:stale:v1';
 const BACKUP_CACHE_KEY = 'theater-posture:sebuf:backup:v1';
-const CACHE_TTL = 900; // 15 minutes
-const STALE_TTL = 86400;
-const BACKUP_TTL = 604800;
 
+// All theater posture assembly (OpenSky + Wingbits + classification)
+// happens on Railway (ais-relay.cjs seedTheaterPosture loop + seed-military-flights.mjs).
+// This handler reads pre-built data from Redis only.
+// Gold standard: Vercel reads, Railway writes.
 // ========================================================================
 // Flight fetching (OpenSky + Wingbits fallback)
 // ========================================================================
@@ -257,17 +248,19 @@ export async function getTheaterPosture(
   _req: GetTheaterPostureRequest,
 ): Promise<GetTheaterPostureResponse> {
   try {
-    const result = await cachedFetchJson<GetTheaterPostureResponse>(
-      CACHE_KEY,
-      CACHE_TTL,
-      fetchTheaterPostureFresh,
-    );
-    if (result) return result;
-  } catch { /* upstream failed — fall through to stale/backup */ }
+    const live = await getCachedJson(CACHE_KEY, true) as GetTheaterPostureResponse | null;
+    if (live?.theaters?.length) return live;
+  } catch { /* fall through to stale/backup */ }
 
-  const stale = (await getCachedJson(STALE_CACHE_KEY)) as GetTheaterPostureResponse | null;
-  if (stale) return stale;
-  const backup = (await getCachedJson(BACKUP_CACHE_KEY)) as GetTheaterPostureResponse | null;
-  if (backup) return backup;
+  try {
+    const stale = await getCachedJson(STALE_CACHE_KEY, true) as GetTheaterPostureResponse | null;
+    if (stale?.theaters?.length) return stale;
+  } catch { /* fall through to backup */ }
+
+  try {
+    const backup = await getCachedJson(BACKUP_CACHE_KEY, true) as GetTheaterPostureResponse | null;
+    if (backup?.theaters?.length) return backup;
+  } catch { /* empty */ }
+
   return { theaters: [] };
 }

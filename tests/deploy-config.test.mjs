@@ -93,7 +93,6 @@ describe('security header guardrails', () => {
     const expectedDisabled = [
       'camera=()',
       'microphone=()',
-      'geolocation=(self)',
       'accelerometer=()',
       'bluetooth=()',
       'display-capture=()',
@@ -123,11 +122,16 @@ describe('security header guardrails', () => {
         `Permissions-Policy should delegate ${api} to YouTube origins`
       );
     }
-    // picture-in-picture also includes Cloudflare challenges
+    // geolocation delegates to self (used by user-location.ts)
+    assert.ok(
+      policy.includes('geolocation=(self)'),
+      'Permissions-Policy should delegate geolocation to self'
+    );
+    // picture-in-picture delegates to self + YouTube
     assert.match(
       policy,
-      /picture-in-picture=\(self "https:\/\/www\.youtube\.com" "https:\/\/www\.youtube-nocookie\.com" "https:\/\/challenges\.cloudflare\.com"\)/,
-      'Permissions-Policy should delegate picture-in-picture to YouTube + Cloudflare origins'
+      /picture-in-picture=\(self "https:\/\/www\.youtube\.com" "https:\/\/www\.youtube-nocookie\.com"\)/,
+      'Permissions-Policy should delegate picture-in-picture to YouTube origins'
     );
   });
 

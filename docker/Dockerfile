@@ -3,19 +3,15 @@
 # Multi-stage build for the World Monitor web app (frontend only).
 
 # Stage 1: Build the frontend with TypeScript + Vite.
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Install all dependencies (including devDependencies for tsc, vite, etc.).
-# blog-site/package.json and package-lock.json must be present before npm ci
-# because the postinstall script runs `cd blog-site && npm ci --prefer-offline`.
-COPY package.json package-lock.json ./
-COPY blog-site/package.json blog-site/package-lock.json ./blog-site/
-RUN npm ci --include=dev
-
 # Copy source and build.
 COPY . .
+
+# Install all dependencies (including devDependencies for tsc, vite, etc.).
+RUN npm ci --include=dev
 
 # Build-time configuration. Pass via --build-arg. Other VITE_* vars (e.g. VITE_PMTILES_URL)
 # can be added here or via --build-arg for custom builds; see .env.example for the full list.

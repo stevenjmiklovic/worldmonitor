@@ -771,6 +771,13 @@
       "spikeAlert": "Phát hiện đột biến — giá cao hơn đáng kể so với trung bình 52 tuần (hàng tuần)",
       "warnings": "cảnh báo",
       "aisDisruptions": "Gián đoạn AIS",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "Khoáng sản",
       "topProducers": "Nhà sản xuất hàng đầu",
       "risk": "Rủi ro",
@@ -817,7 +824,10 @@
       "yes": "Có",
       "no": "Không",
       "vol": "KL",
-      "closes": "Đóng"
+      "closes": "Đóng",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "Sức khỏe Neo giá",
@@ -948,8 +958,8 @@
       "nuclear": "Hạt nhân"
     },
     "community": {
-      "joinDiscussion": "Tham gia Thảo luận",
-      "openDiscussion": "Mở Thảo luận",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "Không hiển thị lại",
       "sectionLabel": "Cộng đồng"
     },

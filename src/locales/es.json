@@ -760,6 +760,13 @@
       "upstreamUnavailable": "Datos de cadena de suministro temporalmente no disponibles — mostrando datos en caché",
       "spikeAlert": "Pico detectado — tarifa significativamente por encima del promedio de 52 semanas (semanal)",
       "warnings": "advertencia(s)",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "Mineral",
       "topProducers": "Principales productores",
       "risk": "Riesgo",
@@ -807,7 +814,10 @@
       "yes": "Sí",
       "no": "No",
       "vol": "volumen",
-      "closes": "Cierra"
+      "closes": "Cierra",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "deckgl": {
       "views": {
@@ -1050,8 +1060,8 @@
       "nuclear": "Nuclear"
     },
     "community": {
-      "joinDiscussion": "Únete a la discusión",
-      "openDiscussion": "Abrir discusión",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "No mostrar de nuevo",
       "sectionLabel": "Comunidad"
     },

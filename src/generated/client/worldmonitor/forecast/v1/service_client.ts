@@ -18,6 +18,7 @@ export interface Forecast {
   region: string;
   title: string;
   scenario: string;
+  feedSummary: string;
   probability: number;
   confidence: number;
   timeHorizon: string;
@@ -30,6 +31,7 @@ export interface Forecast {
   updatedAt: number;
   perspectives?: Perspectives;
   projections?: Projections;
+  caseFile?: ForecastCase;
 }
 
 export interface ForecastSignal {
@@ -61,6 +63,62 @@ export interface Projections {
   h24: number;
   d7: number;
   d30: number;
+}
+
+export interface ForecastCase {
+  supportingEvidence: ForecastCaseEvidence[];
+  counterEvidence: ForecastCaseEvidence[];
+  triggers: string[];
+  actorLenses: string[];
+  baseCase: string;
+  escalatoryCase: string;
+  contrarianCase: string;
+  changeSummary: string;
+  changeItems: string[];
+  actors: ForecastActor[];
+  worldState?: ForecastWorldState;
+  branches: ForecastBranch[];
+}
+
+export interface ForecastCaseEvidence {
+  type: string;
+  summary: string;
+  weight: number;
+}
+
+export interface ForecastActor {
+  id: string;
+  name: string;
+  category: string;
+  role: string;
+  objectives: string[];
+  constraints: string[];
+  likelyActions: string[];
+  influenceScore: number;
+}
+
+export interface ForecastWorldState {
+  summary: string;
+  activePressures: string[];
+  stabilizers: string[];
+  keyUnknowns: string[];
+}
+
+export interface ForecastBranch {
+  kind: string;
+  title: string;
+  summary: string;
+  outcome: string;
+  projectedProbability: number;
+  rounds: ForecastBranchRound[];
+}
+
+export interface ForecastBranchRound {
+  round: number;
+  focus: string;
+  developments: string[];
+  actorMoves: string[];
+  probabilityShift: number;
 }
 
 export interface FieldViolation {

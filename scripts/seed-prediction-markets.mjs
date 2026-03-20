@@ -10,11 +10,10 @@ import predictionTags from './data/prediction-tags.json' with { type: 'json' };
 loadEnvFile(import.meta.url);
 
 const CANONICAL_KEY = 'prediction:markets-bootstrap:v1';
-const CACHE_TTL = 900; // 15 min — matches client poll interval
+const CACHE_TTL = 1800; // 30 min — matches client poll interval
 
 const GAMMA_BASE = 'https://gamma-api.polymarket.com';
-const KALSHI_BASE = 'https://trading-api.kalshi.com/trade-api/v2';
-const KALSHI_ENABLED = process.env.KALSHI_API_KEY !== undefined && process.env.KALSHI_API_KEY !== '';
+const KALSHI_BASE = 'https://api.elections.kalshi.com/trade-api/v2';
 const FETCH_TIMEOUT = 10_000;
 const TAG_DELAY_MS = 300;
 
@@ -54,7 +53,6 @@ async function fetchKalshiEvents() {
       limit: '100',
     });
     const headers = { Accept: 'application/json', 'User-Agent': CHROME_UA };
-    if (process.env.KALSHI_API_KEY) headers.Authorization = `Bearer ${process.env.KALSHI_API_KEY}`;
     const resp = await fetch(`${KALSHI_BASE}/events?${params}`, {
       headers,
       signal: AbortSignal.timeout(FETCH_TIMEOUT),
@@ -69,6 +67,13 @@ async function fetchKalshiEvents() {
     console.warn(`  [kalshi] error fetching events: ${err.message}`);
     return [];
   }
+}
+
+function kalshiTitle(marketTitle, eventTitle) {
+  if (!marketTitle) return eventTitle || '';
+  if (marketTitle.includes('?') || marketTitle.length > 60) return marketTitle;
+  if (!eventTitle || marketTitle === eventTitle) return marketTitle;
+  return `${eventTitle}: ${marketTitle}`;
 }
 
 async function fetchKalshiMarkets() {
@@ -96,8 +101,11 @@ async function fetchKalshiMarkets() {
     const rawPrice = parseFloat(topMarket.last_price_dollars);
     const yesPrice = Number.isFinite(rawPrice) ? +(rawPrice * 100).toFixed(1) : 50;
 
+    const marketTitle = topMarket.yes_sub_title || topMarket.title || '';
+    const title = kalshiTitle(marketTitle, event.title);
+
     results.push({
-      title: topMarket.yes_sub_title || topMarket.title || event.title,
+      title,
       yesPrice,
       volume,
       url: `https://kalshi.com/markets/${topMarket.ticker}`,
@@ -116,8 +124,7 @@ async function fetchAllPredictions() {
   const markets = [];
 
   // Start Kalshi fetch early so it overlaps with Polymarket tag iterations
-  const kalshiPromise = KALSHI_ENABLED ? fetchKalshiMarkets() : Promise.resolve([]);
-  if (!KALSHI_ENABLED) console.log('  [kalshi] disabled (no KALSHI_API_KEY)');
+  const kalshiPromise = fetchKalshiMarkets();
 
   for (const tag of allTags) {
     try {

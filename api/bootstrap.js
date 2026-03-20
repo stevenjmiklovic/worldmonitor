@@ -1,5 +1,6 @@
-import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
+import { getCorsHeaders, getPublicCorsHeaders, isDisallowedOrigin } from './_cors.js';
 import { validateApiKey } from './_api-key.js';
+import { jsonResponse } from './_json-response.js';
 
 export const config = { runtime: 'edge' };
 
@@ -21,13 +22,15 @@ const BOOTSTRAP_CACHE_KEYS = {
   minerals:         'supply_chain:minerals:v2',
   giving:           'giving:summary:v1',
   climateAnomalies: 'climate:anomalies:v1',
+  radiationWatch: 'radiation:observations:v1',
+  thermalEscalation: 'thermal:escalation:v1',
   wildfires:        'wildfire:fires:v1',
   cyberThreats:     'cyber:threats-bootstrap:v2',
   techReadiness:    'economic:worldbank-techreadiness:v1',
   progressData:     'economic:worldbank-progress:v1',
   renewableEnergy:  'economic:worldbank-renewable:v1',
-  positiveGeoEvents: 'positive-events:geo-bootstrap:v1',
-  theaterPosture: 'theater-posture:sebuf:stale:v1',
+  positiveGeoEvents: 'positive_events:geo-bootstrap:v1',
+  theaterPosture: 'theater_posture:sebuf:stale:v1',
   riskScores: 'risk:scores:sebuf:stale:v1',
   naturalEvents: 'natural:events:v1',
   flightDelays: 'aviation:delays-bootstrap:v1',
@@ -45,26 +48,37 @@ const BOOTSTRAP_CACHE_KEYS = {
   techEvents:        'research:tech-events-bootstrap:v1',
   gdeltIntel:        'intelligence:gdelt-intel:v1',
   correlationCards:   'correlation:cards-bootstrap:v1',
+  forecasts:         'forecast:predictions:v2',
+  securityAdvisories: 'intelligence:advisories-bootstrap:v1',
+  customsRevenue:    'trade:customs-revenue:v1',
+  sanctionsPressure: 'sanctions:pressure:v1',
 };
 
 const SLOW_KEYS = new Set([
   'bisPolicy', 'bisExchange', 'bisCredit', 'minerals', 'giving',
-  'sectors', 'etfFlows', 'shippingRates', 'wildfires', 'climateAnomalies',
+  'sectors', 'etfFlows', 'wildfires', 'climateAnomalies',
+  'radiationWatch', 'thermalEscalation',
   'cyberThreats', 'techReadiness', 'progressData', 'renewableEnergy',
   'naturalEvents',
   'cryptoQuotes', 'gulfQuotes', 'stablecoinMarkets', 'unrestEvents', 'ucdpEvents',
   'techEvents',
+  'securityAdvisories',
+  'customsRevenue',
+  'sanctionsPressure',
 ]);
 const FAST_KEYS = new Set([
   'earthquakes', 'outages', 'serviceStatuses', 'macroSignals', 'chokepoints', 'chokepointTransits',
   'marketQuotes', 'commodityQuotes', 'positiveGeoEvents', 'riskScores', 'flightDelays','insights', 'predictions',
   'iranEvents', 'temporalAnomalies', 'weatherAlerts', 'spending', 'theaterPosture', 'gdeltIntel',
-  'correlationCards',
+  'correlationCards', 'forecasts', 'shippingRates',
 ]);
 
+// No public/s-maxage: CF (in front of api.worldmonitor.app) ignores Vary: Origin and would
+// pin ACAO: worldmonitor.app on cached responses, breaking CORS for preview deployments.
+// Vercel CDN caching is handled by TIER_CDN_CACHE via CDN-Cache-Control below.
 const TIER_CACHE = {
-  slow: 'public, s-maxage=3600, stale-while-revalidate=600, stale-if-error=3600',
-  fast: 'public, s-maxage=600, stale-while-revalidate=120, stale-if-error=900',
+  slow: 'max-age=300, stale-while-revalidate=600, stale-if-error=3600',
+  fast: 'max-age=60, stale-while-revalidate=120, stale-if-error=900',
 };
 const TIER_CDN_CACHE = {
   slow: 'public, s-maxage=7200, stale-while-revalidate=1800, stale-if-error=7200',
@@ -116,9 +130,7 @@ export default async function handler(req) {
 
   const apiKeyResult = validateApiKey(req);
   if (apiKeyResult.required && !apiKeyResult.valid)
-    return new Response(JSON.stringify({ error: apiKeyResult.error }), {
-      status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: apiKeyResult.error }, 401, cors);
 
   const url = new URL(req.url);
   const tier = url.searchParams.get('tier');
@@ -140,29 +152,35 @@ export default async function handler(req) {
   try {
     cached = await getCachedJsonBatch(keys);
   } catch {
-    return new Response(JSON.stringify({ data: {}, missing: names }), {
-      status: 200,
-      headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-    });
+    return jsonResponse({ data: {}, missing: names }, 200, { ...cors, 'Cache-Control': 'no-cache' });
   }
 
   const data = {};
   const missing = [];
   for (let i = 0; i < names.length; i++) {
     const val = cached.get(keys[i]);
-    if (val !== undefined) data[names[i]] = val;
-    else missing.push(names[i]);
+    if (val !== undefined) {
+      // Strip seed-internal metadata not intended for API clients
+      if (names[i] === 'forecasts' && val != null && 'enrichmentMeta' in val) {
+        const { enrichmentMeta: _stripped, ...rest } = val;
+        data[names[i]] = rest;
+      } else {
+        data[names[i]] = val;
+      }
+    } else {
+      missing.push(names[i]);
+    }
   }
 
   const cacheControl = (tier && TIER_CACHE[tier]) || 'public, s-maxage=600, stale-while-revalidate=120, stale-if-error=900';
 
-  return new Response(JSON.stringify({ data, missing }), {
-    status: 200,
-    headers: {
-      ...cors,
-      'Content-Type': 'application/json',
-      'Cache-Control': cacheControl,
-      'CDN-Cache-Control': (tier && TIER_CDN_CACHE[tier]) || TIER_CDN_CACHE.fast,
-    },
+  // Bootstrap data is fully public (world events, market prices, seismic data).
+  // Use ACAO: * so CF caches one entry valid for all origins, including Vercel
+  // preview deployments. Per-origin ACAO with Vary: Origin causes CF to pin the
+  // first origin's ACAO on the cached response, breaking CORS for other origins.
+  return jsonResponse({ data, missing }, 200, {
+    ...getPublicCorsHeaders(),
+    'Cache-Control': cacheControl,
+    'CDN-Cache-Control': (tier && TIER_CDN_CACHE[tier]) || TIER_CDN_CACHE.fast,
   });
 }

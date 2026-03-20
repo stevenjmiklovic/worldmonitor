@@ -771,6 +771,13 @@
       "spikeAlert": "급등 감지 — 52주 평균(주간)을 크게 상회하는 운임",
       "warnings": "경고",
       "aisDisruptions": "AIS 두절",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "광물",
       "topProducers": "주요 생산국",
       "risk": "위험도",
@@ -817,7 +824,10 @@
       "yes": "예",
       "no": "아니오",
       "vol": "거래량",
-      "closes": "마감"
+      "closes": "마감",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "페그 건전성",
@@ -948,8 +958,8 @@
       "nuclear": "핵 시설"
     },
     "community": {
-      "joinDiscussion": "토론 참여",
-      "openDiscussion": "토론 열기",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "다시 표시하지 않기",
       "sectionLabel": "커뮤니티"
     },

@@ -8,7 +8,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const BATCH_SIZE = 500;
 const R2_BUCKET_URL = 'https://api.cloudflare.com/client/v4/accounts/{acct}/r2/buckets/worldmonitor-data/objects/seed-data/military-bases-final.json';
-const CF_ACCOUNT_ID = 'c1dd10ed1008132d1e8d479b79a98b32';
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1000;
 const PROGRESS_INTERVAL = 5000;
@@ -247,10 +246,11 @@ async function main() {
 
   if (!dataPath) {
     const cfToken = process.env.CLOUDFLARE_R2_TOKEN || process.env.CLOUDFLARE_API_TOKEN || '';
-    if (cfToken) {
+    const cfAccountId = process.env.CLOUDFLARE_R2_ACCOUNT_ID || '';
+    if (cfToken && cfAccountId) {
       console.log('  Local file not found — downloading from R2...');
       try {
-        const r2Url = R2_BUCKET_URL.replace('{acct}', CF_ACCOUNT_ID);
+        const r2Url = R2_BUCKET_URL.replace('{acct}', cfAccountId);
         const resp = await fetch(r2Url, {
           headers: { Authorization: `Bearer ${cfToken}` },
           signal: AbortSignal.timeout(60_000),
@@ -267,6 +267,8 @@ async function main() {
       } catch (err) {
         console.log(`  R2 download failed: ${err.message}`);
       }
+    } else if (cfToken) {
+      console.log('  R2 download skipped: missing CLOUDFLARE_R2_ACCOUNT_ID');
     }
   }
 

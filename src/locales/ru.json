@@ -771,6 +771,13 @@
       "spikeAlert": "Обнаружен всплеск — ставка значительно выше средней за 52 недели (еженедельно)",
       "warnings": "предупреждений",
       "aisDisruptions": "Нарушение(я) AIS",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "Минерал",
       "topProducers": "Крупнейшие производители",
       "risk": "Риск",
@@ -817,7 +824,10 @@
       "yes": "Да",
       "no": "Нет",
       "vol": "Объём",
-      "closes": "Закрывается"
+      "closes": "Закрывается",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "Здоровье привязки",
@@ -948,8 +958,8 @@
       "nuclear": "Ядерный"
     },
     "community": {
-      "joinDiscussion": "Присоединиться к обсуждению",
-      "openDiscussion": "Открыть обсуждение",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "Больше не показывать",
       "sectionLabel": "Сообщество"
     },

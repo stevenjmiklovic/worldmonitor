@@ -4,6 +4,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/stevenjmiklovic/worldmonitor?style=social)](https://github.com/stevenjmiklovic/worldmonitor/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/stevenjmiklovic/worldmonitor?style=social)](https://github.com/stevenjmiklovic/worldmonitor/network/members)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/re63kWKxaz)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Last commit](https://img.shields.io/github/last-commit/stevenjmiklovic/worldmonitor)](https://github.com/stevenjmiklovic/worldmonitor/commits/main)

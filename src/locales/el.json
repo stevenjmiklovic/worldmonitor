@@ -771,6 +771,13 @@
       "spikeAlert": "Ανιχνεύθηκε κορύφωση — τιμή σημαντικά πάνω από τον μέσο όρο 52 εβδομάδων (εβδομαδιαία)",
       "warnings": "προειδοποίηση(-εις)",
       "aisDisruptions": "Διαταραχή(ές) AIS",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "Ορυκτό",
       "topProducers": "Κορυφαίοι Παραγωγοί",
       "risk": "Κίνδυνος",
@@ -817,7 +824,10 @@
       "yes": "Ναι",
       "no": "Όχι",
       "vol": "Όγκ",
-      "closes": "Κλείνει"
+      "closes": "Κλείνει",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "Υγεία Σύνδεσης",
@@ -948,8 +958,8 @@
       "nuclear": "Πυρηνικό"
     },
     "community": {
-      "joinDiscussion": "Συμμετοχή στη Συζήτηση",
-      "openDiscussion": "Ανοιχτή Συζήτηση",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "Να μην εμφανιστεί ξανά",
       "sectionLabel": "Κοινότητα"
     },

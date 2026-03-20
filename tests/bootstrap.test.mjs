@@ -140,9 +140,11 @@ describe('Bootstrap endpoint (api/bootstrap.js)', () => {
   });
 
   it('sets Cache-Control header with s-maxage for both tiers', () => {
-    assert.ok(src.includes('s-maxage=3600'), 'Missing s-maxage=3600 for slow tier');
-    assert.ok(src.includes('s-maxage=600'), 'Missing s-maxage=600 for fast tier');
+    // Cache-Control uses browser-only max-age (no s-maxage) so CF does not cache and
+    // pin a single ACAO origin. Vercel CDN uses CDN-Cache-Control for edge caching.
+    assert.ok(src.includes('max-age='), 'Missing max-age in Cache-Control');
     assert.ok(src.includes('stale-while-revalidate'), 'Missing stale-while-revalidate');
+    assert.ok(src.includes('CDN-Cache-Control'), 'Missing CDN-Cache-Control for Vercel CDN');
   });
 
   it('validates API key for desktop origins', () => {
@@ -185,6 +187,17 @@ describe('Frontend hydration (src/services/bootstrap.ts)', () => {
       const ms = parseInt(m[1].replace(/_/g, ''), 10);
       assert.ok(ms <= 5000, `Timeout ${ms}ms too high — should be ≤5000ms to avoid regressing startup`);
     }
+  });
+
+  it('keeps web bootstrap tier timeouts under 2 seconds', () => {
+    const timeouts = Array.from(src.matchAll(/(\d[_\d]*)\)/g))
+      .map((m) => parseInt(m[1].replace(/_/g, ''), 10))
+      .filter((n) => n === 1200 || n === 1800);
+    assert.deepEqual(timeouts, [1200, 1800], `Expected aggressive web bootstrap timeouts (1200, 1800)`);
+  });
+
+  it('allows longer bootstrap timeouts for desktop runtime', () => {
+    assert.ok(src.includes('isDesktopRuntime'), 'Bootstrap should branch on desktop for longer timeouts');
   });
 
   it('fetches tiered bootstrap URLs', () => {

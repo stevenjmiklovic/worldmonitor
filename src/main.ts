@@ -63,6 +63,8 @@ Sentry.init({
     /hackLocationFailed is not defined/,
     /userScripts is not defined/,
     /NS_ERROR_ABORT/,
+    /NS_ERROR_OUT_OF_MEMORY/,
+    /^Key not found$/,
     /DataCloneError.*could not be cloned/,
     /cannot decode message/,
     /WKWebView was deallocated/,
@@ -118,7 +120,7 @@ Sentry.init({
     /isReCreate is not defined/,
     /reading 'style'.*HTMLImageElement/,
     /can't access property "write", \w+ is undefined/,
-    /AbortError: The user aborted a request/,
+    /(?:AbortError: )?The user aborted a request/,
     /\w+ is not a function.*\/uv\/service\//,
     /__isInQueue__/,
     /^(?:LIDNotify(?:Id)?|onWebViewAppeared|onGetWiFiBSSID) is not defined$/,
@@ -171,7 +173,7 @@ Sentry.init({
     /Failed to construct 'Worker'.*cannot be accessed from origin/,
     /undefined is not an object \(evaluating '(?:this\.)?media(?:Controller)?\.(?:duration|videoTracks|readyState|audioTracks|media)/,
     /\$ is not defined/,
-    /Qt\(\) is not a function/,
+    /Qt\([^)]*\) is not a function/,
     /out of memory/,
     /Could not connect to the server/,
     /shaderSource must be an instance of WebGLShader/,
@@ -233,6 +235,15 @@ Sentry.init({
     /Failed reading data from the file system/,
     /^UnavailableError(:.*)?$/,
     /null is not an object \(evaluating '\w{1,3}\.indexOf'\)/,
+    /export declarations may only appear at top level/,
+    /^SyntaxError: Unexpected keyword/,
+    /ucConfig is not defined/,
+    /getShaderPrecisionFormat/,
+    /Cannot read properties of null \(reading 'touches'\)/,
+    /Failed to execute 'querySelectorAll' on '[^']*': ':[a-z]+\(/,
+    /args\.site\.enabledFeatures/,
+    /can't access property "\w+", FONTS\[/,
+    /^\w{1,2} is not a function\. \(In '\w{1,2}\(/,
   ],
   beforeSend(event) {
     const msg = event.exception?.values?.[0]?.value ?? '';
@@ -280,6 +291,22 @@ Sentry.init({
     if (frames.some(f => /\/uv\/service\//.test(f.filename ?? '') || /uv\.handler/.test(f.filename ?? ''))) return null;
     // Suppress YouTube IFrame widget API internal errors
     if (frames.some(f => /www-widgetapi\.js/.test(f.filename ?? ''))) return null;
+    // Suppress Sentry beacon XHR transport errors (readyState on aborted XHR — not our code)
+    if (frames.some(f => /beacon\.min\.js/.test(f.filename ?? ''))) return null;
+    // Suppress TransactionInactiveError only when no first-party frames are present
+    // (Safari kills open IDB transactions in background tabs — not actionable noise)
+    // First-party paths in storage.ts / persistent-cache.ts / vector-db.ts must still surface.
+    if (/TransactionInactiveError/.test(msg) || excType === 'TransactionInactiveError') {
+      const appFrames = frames.filter(
+        f => f.filename && f.filename !== '<anonymous>' && f.filename !== '[native code]'
+          && !/\/sentry-[A-Za-z0-9_-]+\.js/.test(f.filename)
+      );
+      const hasFirstParty = appFrames.some(
+        f => /\.(ts|tsx)$/.test(f.filename ?? '') || /^src\//.test(f.filename ?? '')
+          || /\/(main|index|app)-[A-Za-z0-9_-]+\.js/.test(f.filename ?? '')
+      );
+      if (!hasFirstParty) return null;
+    }
     return event;
   },
 });
@@ -398,21 +425,89 @@ if ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) {
 }
 
 if (!('__TAURI_INTERNALS__' in window) && !('__TAURI__' in window) && 'serviceWorker' in navigator) {
-  // Auto-reload when a new SW takes control (fixes stale HTML after deploys)
+  // Auto-reload when a NEW SW replaces an existing one (fixes stale HTML after deploys).
+  // Skip on first visit: skipWaiting+clientsClaim fires controllerchange when the SW
+  // claims the page for the first time, causing a useless full reload on every new session.
+  let hadController = !!navigator.serviceWorker.controller;
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) {
+      hadController = true;
+      return;
+    }
     if (refreshing) return;
     refreshing = true;
     window.location.reload();
   });
 
+  const SW_UPDATE_SUCCESS_INTERVAL_MS = 60 * 60 * 1000;
+  const SW_UPDATE_FAILURE_INTERVAL_MS = 5 * 60 * 1000;
+  const SW_UPDATE_LAST_CHECK_KEY = 'wm-sw-last-update-check';
+  const SW_UPDATE_LAST_RESULT_KEY = 'wm-sw-last-update-ok';
+
+  const readStorageNum = (key: string): number => {
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? Number(raw) : 0;
+      return Number.isFinite(parsed) ? parsed : 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const writeStorageNum = (key: string, value: number): void => {
+    try {
+      localStorage.setItem(key, String(value));
+    } catch {}
+  };
+
   navigator.serviceWorker.register('/sw.js', { scope: '/' })
     .then((registration) => {
       console.log('[PWA] Service worker registered');
-      const swUpdateInterval = setInterval(async () => {
+
+      let swUpdateInFlight = false;
+
+      const maybeCheckForSwUpdate = async (
+        reason: 'initial' | 'visible' | 'online' | 'interval'
+      ): Promise<void> => {
+        if (swUpdateInFlight) return;
         if (!navigator.onLine) return;
-        try { await registration.update(); } catch {}
-      }, 5 * 60 * 1000);
+        if (reason === 'interval' && document.visibilityState !== 'visible') return;
+
+        const now = Date.now();
+        const lastCheck = readStorageNum(SW_UPDATE_LAST_CHECK_KEY);
+        const lastOk = readStorageNum(SW_UPDATE_LAST_RESULT_KEY);
+        const interval = lastOk >= lastCheck ? SW_UPDATE_SUCCESS_INTERVAL_MS : SW_UPDATE_FAILURE_INTERVAL_MS;
+        if (now - lastCheck < interval) return;
+
+        swUpdateInFlight = true;
+        writeStorageNum(SW_UPDATE_LAST_CHECK_KEY, now);
+        try {
+          await registration.update();
+          writeStorageNum(SW_UPDATE_LAST_RESULT_KEY, now);
+        } catch (e) {
+          console.warn('[PWA] SW update check failed:', e);
+        } finally {
+          swUpdateInFlight = false;
+        }
+      };
+
+      void maybeCheckForSwUpdate('initial');
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          void maybeCheckForSwUpdate('visible');
+        }
+      });
+
+      window.addEventListener('online', () => {
+        void maybeCheckForSwUpdate('online');
+      });
+
+      const swUpdateInterval = window.setInterval(() => {
+        void maybeCheckForSwUpdate('interval');
+      }, 15 * 60 * 1000);
+
       (window as unknown as Record<string, unknown>).__swUpdateInterval = swUpdateInterval;
     })
     .catch((err) => {

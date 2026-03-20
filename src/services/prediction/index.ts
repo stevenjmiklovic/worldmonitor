@@ -68,7 +68,7 @@ function protoToMarket(m: { title: string; yesPrice: number; volume: number; url
 export async function fetchPredictions(opts?: { region?: string }): Promise<PredictionMarket[]> {
   const markets = await breaker.execute(async () => {
     const hydrated = getHydratedData('predictions') as BootstrapPredictionData | undefined;
-    if (hydrated?.fetchedAt && Date.now() - hydrated.fetchedAt < 20 * 60 * 1000) {
+    if (hydrated?.fetchedAt && Date.now() - hydrated.fetchedAt < 40 * 60 * 1000) {
       const variant = SITE_VARIANT === 'tech' ? hydrated.tech
         : SITE_VARIANT === 'finance' ? (hydrated.finance ?? hydrated.geopolitical)
         : hydrated.geopolitical;

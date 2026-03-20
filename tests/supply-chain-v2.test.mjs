@@ -218,9 +218,11 @@ describe('Chokepoint handler v2 changes', () => {
       'Should set aisDisruptions to matchedDisruptions.length');
   });
 
-  it('description includes warning and disruption counts when present', () => {
-    assert.match(src, /Navigational warnings:\s*\$\{matchedWarnings\.length\}/);
-    assert.match(src, /AIS vessel disruptions:\s*\$\{matchedDisruptions\.length\}/);
+  it('description does not duplicate warning/disruption counts (use structured fields)', () => {
+    assert.doesNotMatch(src, /descriptions\.push\(`Navigational warnings:/,
+      'Warning counts should not be in description text (use activeWarnings field)');
+    assert.doesNotMatch(src, /descriptions\.push\(`AIS vessel disruptions:/,
+      'Disruption counts should not be in description text (use aisDisruptions field)');
   });
 
   it('description shows threatDescription when set', () => {
@@ -295,19 +297,19 @@ describe('Minerals handler v2 changes', () => {
 describe('Shipping handler v2 changes', () => {
   const src = readSrc('server/worldmonitor/supply-chain/v1/get-shipping-rates.ts');
 
-  it('uses full name "Deep Sea Freight Producer Price Index"', () => {
-    assert.match(src, /Deep Sea Freight Producer Price Index/);
-    assert.doesNotMatch(src, /name:\s*'Deep Sea Freight PPI'/);
+  it('is cache-only (no FRED fetcher, seed script is sole aggregator)', () => {
+    assert.ok(!src.includes('FRED_API_BASE'), 'Handler should not contain FRED_API_BASE');
+    assert.ok(!src.includes('fetchFredSeries'), 'Handler should not contain fetchFredSeries');
+    assert.ok(src.includes('getCachedJson'), 'Should read seed key via getCachedJson(key, true)');
+    assert.ok(src.includes('true'), 'Should pass raw=true to bypass env prefix');
   });
 
-  it('uses full name "Freight Transportation Services Index"', () => {
-    assert.match(src, /Freight Transportation Services Index/);
-    assert.doesNotMatch(src, /name:\s*'Freight Transportation Index'/);
-  });
-
-  it('still fetches series PCU483111483111 and TSIFRGHT', () => {
-    assert.match(src, /PCU483111483111/);
-    assert.match(src, /TSIFRGHT/);
+  it('FRED series names moved to seed script', () => {
+    const seedSrc = readSrc('scripts/seed-supply-chain-trade.mjs');
+    assert.match(seedSrc, /Deep Sea Freight Producer Price Index/);
+    assert.match(seedSrc, /Freight Transportation Services Index/);
+    assert.match(seedSrc, /PCU483111483111/);
+    assert.match(seedSrc, /TSIFRGHT/);
   });
 });
 

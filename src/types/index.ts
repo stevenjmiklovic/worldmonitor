@@ -29,7 +29,10 @@ export type DataSourceId =
   | 'wto_trade'
   | 'supply_chain'
   | 'security_advisories'
-  | 'gpsjam';
+  | 'gpsjam'
+  | 'sanctions_pressure'
+  | 'radiation'
+  | 'treasury_revenue';
 
 // AppContext lives in src/app/app-context.ts because it references
 // components, services, and utils (top-level aggregate type).
@@ -576,6 +579,7 @@ export interface MapLayers {
   ais: boolean;
   nuclear: boolean;
   irradiators: boolean;
+  radiationWatch?: boolean;
   sanctions: boolean;
   weather: boolean;
   economic: boolean;
@@ -631,6 +635,7 @@ export interface MapLayers {
   processingPlants: boolean;
   commodityPorts: boolean;
   webcams: boolean;
+  weatherRadar: boolean;
 }
 
 export interface AIDataCenter {
@@ -1441,6 +1446,7 @@ export interface CountryBriefSignals {
   outages: number;
   aisDisruptions: number;
   satelliteFires: number;
+  radiationAnomalies: number;
   temporalAnomalies: number;
   cyberThreats: number;
   earthquakes: number;

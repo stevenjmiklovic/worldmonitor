@@ -771,6 +771,13 @@
       "spikeAlert": "スパイク検出 — 料金が52週平均を大幅に上回っています（週次）",
       "warnings": "件の警告",
       "aisDisruptions": "AIS途絶",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "鉱物",
       "topProducers": "主要生産国",
       "risk": "リスク",
@@ -817,7 +824,10 @@
       "yes": "はい",
       "no": "いいえ",
       "vol": "出来高",
-      "closes": "締切"
+      "closes": "締切",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "ペグ健全性",
@@ -948,8 +958,8 @@
       "nuclear": "核施設"
     },
     "community": {
-      "joinDiscussion": "ディスカッションに参加",
-      "openDiscussion": "ディスカッションを開く",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "今後表示しない",
       "sectionLabel": "コミュニティ"
     },

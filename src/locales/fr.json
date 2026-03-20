@@ -790,7 +790,10 @@
       "yes": "Oui",
       "no": "Non",
       "vol": "Vol",
-      "closes": "Ferme"
+      "closes": "Ferme",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "Santé de l'ancrage",
@@ -921,8 +924,8 @@
       "nuclear": "Nucléaire"
     },
     "community": {
-      "joinDiscussion": "Rejoindre la discussion",
-      "openDiscussion": "Ouvrir la discussion",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "Ne plus afficher",
       "sectionLabel": "Communauté"
     },
@@ -1676,6 +1679,13 @@
     "supplyChain": {
       "chokepoints": "Points d'étranglement",
       "fredKeyMissing": "Clé API FRED requise pour les tarifs d'expédition — ajoutez-la dans les Paramètres. Points d'étranglement et minéraux disponibles sans clé.",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "Minéral",
       "minerals": "Minéraux",
       "noChokepoints": "Données des points d'étranglement en cours de chargement...",

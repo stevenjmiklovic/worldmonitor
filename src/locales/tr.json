@@ -771,6 +771,13 @@
       "spikeAlert": "Ani artış tespit edildi — ücret 52 haftalık ortalamanın önemli ölçüde üzerinde (haftalık)",
       "warnings": "uyarı(lar)",
       "aisDisruptions": "AIS aksaklık(lar)ı",
+      "routingAction": "Routing",
+      "disruption": "Disruption",
+      "vessels": "vessels",
+      "incidents7d": "incidents (7d)",
+      "corridorDisruption": "Corridor Disruption",
+      "corridor": "Corridor",
+      "loadingCorridors": "Loading corridor data...",
       "mineral": "Mineral",
       "topProducers": "En Büyük Üreticiler",
       "risk": "Risk",
@@ -817,7 +824,10 @@
       "yes": "Evet",
       "no": "Hayir",
       "vol": "Hacim",
-      "closes": "Kapanış"
+      "closes": "Kapanış",
+      "leanYes": "Lean Yes",
+      "leanNo": "Lean No",
+      "tossUp": "Toss-up"
     },
     "stablecoins": {
       "pegHealth": "Parite Sagligi",
@@ -948,8 +958,8 @@
       "nuclear": "Nukleer"
     },
     "community": {
-      "joinDiscussion": "Tartismaya Katilin",
-      "openDiscussion": "Tartismayi Ac",
+      "joinDiscussion": "Join Discord",
+      "openDiscussion": "Join Discord",
       "dontShowAgain": "Bir daha gosterme",
       "sectionLabel": "Topluluk"
     },

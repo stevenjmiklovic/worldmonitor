@@ -11,6 +11,12 @@ export interface ProviderCredentials {
   extraBody?: Record<string, unknown>;
 }
 
+export type LlmProviderName = 'ollama' | 'groq' | 'openrouter' | 'generic';
+
+export interface ProviderCredentialOverrides {
+  model?: string;
+}
+
 const OLLAMA_HOST_ALLOWLIST = new Set([
   'localhost', '127.0.0.1', '::1', '[::1]', 'host.docker.internal',
 ]);
@@ -20,7 +26,10 @@ function isLocalDeployment(): boolean {
   return mode.includes('sidecar') || mode.includes('docker');
 }
 
-export function getProviderCredentials(provider: string): ProviderCredentials | null {
+export function getProviderCredentials(
+  provider: string,
+  overrides: ProviderCredentialOverrides = {},
+): ProviderCredentials | null {
   if (provider === 'ollama') {
     const baseUrl = process.env.OLLAMA_API_URL;
     if (!baseUrl) return null;
@@ -43,7 +52,7 @@ export function getProviderCredentials(provider: string): ProviderCredentials | 
 
     return {
       apiUrl: new URL('/v1/chat/completions', baseUrl).toString(),
-      model: process.env.OLLAMA_MODEL || 'llama3.1:8b',
+      model: overrides.model || process.env.OLLAMA_MODEL || 'llama3.1:8b',
       headers,
       extraBody: { think: false },
     };
@@ -54,7 +63,7 @@ export function getProviderCredentials(provider: string): ProviderCredentials | 
     if (!apiKey) return null;
     return {
       apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
-      model: 'llama-3.1-8b-instant',
+      model: overrides.model || 'llama-3.1-8b-instant',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -67,12 +76,27 @@ export function getProviderCredentials(provider: string): ProviderCredentials | 
     if (!apiKey) return null;
     return {
       apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
-      model: 'openrouter/free',
+      model: overrides.model || 'google/gemini-2.5-flash',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://worldmonitor.app',
         'X-Title': 'World Monitor',
+      },
+    };
+  }
+
+  // Generic OpenAI-compatible endpoint via LLM_API_URL/LLM_API_KEY/LLM_MODEL
+  if (provider === 'generic') {
+    const apiUrl = process.env.LLM_API_URL;
+    const apiKey = process.env.LLM_API_KEY;
+    if (!apiUrl || !apiKey) return null;
+    return {
+      apiUrl,
+      model: overrides.model || process.env.LLM_MODEL || 'gpt-3.5-turbo',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
     };
   }
@@ -100,7 +124,8 @@ export function stripThinkingTags(text: string): string {
   return s;
 }
 
-const PROVIDER_CHAIN = ['ollama', 'groq', 'openrouter'] as const;
+const PROVIDER_CHAIN = ['ollama', 'groq', 'openrouter', 'generic'] as const;
+const PROVIDER_SET = new Set<string>(PROVIDER_CHAIN);
 
 export interface LlmCallOptions {
   messages: Array<{ role: string; content: string }>;
@@ -108,6 +133,10 @@ export interface LlmCallOptions {
   maxTokens?: number;
   timeoutMs?: number;
   provider?: string;
+  // Optional overrides. When omitted, the historic provider chain and default
+  // provider models remain unchanged for all existing callers.
+  providerOrder?: string[];
+  modelOverrides?: Partial<Record<LlmProviderName, string>>;
   stripThinkingTags?: boolean;
   validate?: (content: string) => boolean;
 }
@@ -119,6 +148,26 @@ export interface LlmCallResult {
   tokens: number;
 }
 
+function resolveProviderChain(opts: {
+  forcedProvider?: string;
+  providerOrder?: string[];
+}): string[] {
+  if (opts.forcedProvider) return [opts.forcedProvider];
+  if (!Array.isArray(opts.providerOrder) || opts.providerOrder.length === 0) {
+    return [...PROVIDER_CHAIN];
+  }
+
+  const seen = new Set<string>();
+  const providers: string[] = [];
+  for (const provider of opts.providerOrder) {
+    if (!PROVIDER_SET.has(provider) || seen.has(provider)) continue;
+    seen.add(provider);
+    providers.push(provider);
+  }
+
+  return providers.length > 0 ? providers : [...PROVIDER_CHAIN];
+}
+
 export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult | null> {
   const {
     messages,
@@ -126,14 +175,18 @@ export async function callLlm(opts: LlmCallOptions): Promise<LlmCallResult | nul
     maxTokens = 1500,
     timeoutMs = 25_000,
     provider: forcedProvider,
+    providerOrder,
+    modelOverrides,
     stripThinkingTags: shouldStrip = true,
     validate,
   } = opts;
 
-  const providers = forcedProvider ? [forcedProvider] : [...PROVIDER_CHAIN];
+  const providers = resolveProviderChain({ forcedProvider, providerOrder });
 
   for (const providerName of providers) {
-    const creds = getProviderCredentials(providerName);
+    const creds = getProviderCredentials(providerName, {
+      model: modelOverrides?.[providerName as LlmProviderName],
+    });
     if (!creds) {
       if (forcedProvider) return null;
       continue;
