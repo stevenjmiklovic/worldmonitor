@@ -919,6 +919,44 @@ export class PanelLayoutManager implements AppModule {
       if (!this.ctx.panelSettings[spec.id]) {
         this.ctx.panelSettings[spec.id] = { name: spec.title, enabled: true, priority: 3 };
       }
+    // Game variant panels (lazy-loaded — only relevant for game variant)
+    if (SITE_VARIANT === 'game') {
+      this.lazyPanel('game-hud', () =>
+        import('@/components/GameHudPanel').then(m => {
+          const p = new m.GameHudPanel(
+            () => this.ctx.allNews.slice(0, 15).map(n => n.title).filter(Boolean),
+          );
+          this.ctx.gameHudPanel = p;
+          this.ctx.gameState = p.getState();
+
+          // Wire sibling panels to state changes
+          p.onChange(state => {
+            this.ctx.gameState = state;
+            this.ctx.gameBriefingPanel?.update(state);
+            this.ctx.gameLogPanel?.update(state);
+          });
+          return p;
+        }),
+      );
+
+      this.lazyPanel('game-briefing', () =>
+        import('@/components/GameBriefingPanel').then(m => {
+          const p = new m.GameBriefingPanel();
+          this.ctx.gameBriefingPanel = p;
+          // push current state if HUD already initialised
+          if (this.ctx.gameState) p.update(this.ctx.gameState);
+          return p;
+        }),
+      );
+
+      this.lazyPanel('game-log', () =>
+        import('@/components/GameLogPanel').then(m => {
+          const p = new m.GameLogPanel();
+          this.ctx.gameLogPanel = p;
+          if (this.ctx.gameState) p.update(this.ctx.gameState);
+          return p;
+        }),
+      );
     }
 
     const defaultOrder = Object.keys(DEFAULT_PANELS).filter(k => k !== 'map');

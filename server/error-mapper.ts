@@ -8,6 +8,8 @@
  * - Unknown errors -- 500 Internal Server Error
  */
 
+import { getRequestLogger } from '../src/lib/logger';
+
 /**
  * Detects network/fetch errors across runtimes. Per Fetch spec, network
  * errors throw TypeError. We also check common error message patterns

@@ -2786,6 +2786,16 @@ async function seedClassify() {
     const hasAnyProvider = CLASSIFY_LLM_PROVIDERS.some((p) => !!process.env[p.envKey]);
     if (!hasAnyProvider) {
       console.log('[Classify] Skipped — no LLM provider keys configured');
+    const apiKey = process.env.LLM_API_KEY || process.env.GROQ_API_KEY || process.env.BEDROCK_API_KEY;
+    const apiUrl = process.env.LLM_API_URL || 'https://api.groq.com/openai/v1/chat/completions';
+    const model = process.env.LLM_MODEL || 'llama-3.1-8b-instant';
+    if (!apiKey) {
+      console.log('[Classify] Skipped — no LLM_API_KEY, GROQ_API_KEY, or BEDROCK_API_KEY');
+      return;
+    }
+    const isProd = process.env.RAILWAY_ENVIRONMENT === 'production';
+    if (isProd && !apiUrl.startsWith('https://') && !apiUrl.startsWith('http://localhost')) {
+      console.warn('[Classify] LLM_API_URL must be HTTPS in production — skipping');
       return;
     }
 

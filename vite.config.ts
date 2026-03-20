@@ -9,6 +9,20 @@ import pkg from './package.json';
 import { VARIANT_META, type VariantMeta } from './src/config/variant-meta';
 
 // Env-dependent constants moved inside defineConfig function
+// Load .env into process.env so non-VITE_ server-side vars (e.g. WS_RELAY_URL)
+// are visible to Vite middleware handlers (sebufApiPlugin etc.) at dev time.
+// Vite only injects VITE_* vars into import.meta.env; non-prefixed vars need
+// this explicit step to reach process.env in server-side plugin code.
+try {
+  const lines = readFileSync(new URL('.env', import.meta.url), 'utf-8').split('\n');
+  for (const line of lines) {
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (m) process.env[m[1]] ??= m[2].trim();
+  }
+} catch { /* .env is optional */ }
+
+const isE2E = process.env.VITE_E2E === '1';
+const isDesktopBuild = process.env.VITE_DESKTOP_RUNTIME === '1';
 
 const brotliCompressAsync = promisify(brotliCompress);
 const BROTLI_EXTENSIONS = new Set(['.js', '.mjs', '.css', '.html', '.svg', '.json', '.txt', '.xml', '.wasm']);
@@ -837,16 +851,25 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    server: {
-      port: 3000,
-      open: !isE2E,
-      hmr: isE2E ? false : undefined,
-      watch: {
-        ignored: [
-          '**/test-results/**',
-          '**/playwright-report/**',
-          '**/.playwright-mcp/**',
-        ],
+  },
+  server: {
+    port: 3000,
+    open: !isE2E,
+    hmr: isE2E ? false : undefined,
+    allowedHosts: ['sxs.exarcos.net', 'game.sxs.exarcos.net', 'tech.sxs.exarcos.net', 'finance.sxs.exarcos.net', 'happy.sxs.exarcos.net', 'commodity.sxs.exarcos.net'],
+    watch: {
+      ignored: [
+        '**/test-results/**',
+        '**/playwright-report/**',
+        '**/.playwright-mcp/**',
+      ],
+    },
+    proxy: {
+      // Yahoo Finance API
+      '/api/yahoo': {
+        target: 'https://query1.finance.yahoo.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/yahoo/, ''),
       },
       proxy: {
         // Widget agent — forward to Railway relay for SSE streaming

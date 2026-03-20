@@ -134,6 +134,18 @@ async function fetchBDI() {
       headers: { 'User-Agent': CHROME_UA, 'Accept-Encoding': 'gzip, deflate' },
       signal: AbortSignal.timeout(10_000),
       redirect: 'manual',
+    if (!resp.ok) { console.warn(`  FRED ${cfg.seriesId}: HTTP ${resp.status}`); continue; }
+    const data = await resp.json();
+    const observations = (data.observations || [])
+      .map(o => { const v = parseFloat(o.value); return Number.isNaN(v) || o.value === '.' ? null : { date: o.date, value: v }; })
+      .filter(Boolean).reverse();
+    if (observations.length === 0) continue;
+    const current = observations[observations.length - 1].value;
+    const previous = observations.length > 1 ? observations[observations.length - 2].value : current;
+    const changePct = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
+    indices.push({
+      indexId: cfg.seriesId, name: cfg.name, currentValue: current, previousValue: previous,
+      changePct, unit: cfg.unit, history: observations, spikeAlert: detectSpike(observations),
     });
     if (!resp.ok && resp.status !== 301 && resp.status !== 302) {
       console.warn(`  BDI: HTTP ${resp.status}`);
@@ -301,6 +313,26 @@ function buildFlowRecords(rows, reporterCode, partnerCode) {
       yoyExportChange: prev?.exports > 0 ? Math.round(((cur.exports - prev.exports) / prev.exports) * 10000) / 100 : 0,
       yoyImportChange: prev?.imports > 0 ? Math.round(((cur.imports - prev.imports) / prev.imports) * 10000) / 100 : 0,
       productSector: 'Total merchandise',
+  for (const reporter of MAJOR_REPORTERS) {
+    const partner = '000';
+    const years = 10;
+    const startYear = currentYear - years;
+    const base = { r: reporter, p: partner, ps: `${startYear}-${currentYear}`, pc: 'TO', fmt: 'json', mode: 'full', max: '500' };
+
+    const [exportsResult, importsResult] = await Promise.allSettled([
+      wtoFetch('/data', { ...base, i: 'ITS_MTV_AX' }),
+      wtoFetch('/data', { ...base, i: 'ITS_MTV_AM' }),
+    ]);
+    const exportsData = exportsResult.status === 'fulfilled' ? exportsResult.value : null;
+    const importsData = importsResult.status === 'fulfilled' ? importsResult.value : null;
+
+    const parseRows = (data, indicator) => {
+      const dataset = Array.isArray(data) ? data : data?.Dataset ?? data?.dataset ?? [];
+      return dataset.map(row => {
+        const year = parseInt(row.Year ?? row.year ?? '', 10);
+        const value = parseFloat(row.Value ?? row.value ?? '');
+        return !Number.isNaN(year) && !Number.isNaN(value) ? { year, indicator, value } : null;
+      }).filter(Boolean);
     };
   });
 }

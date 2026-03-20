@@ -121,6 +121,13 @@ const VARIANT_LAYER_ORDER: Record<MapVariant, Array<keyof MapLayers>> = {
     'protests', 'natural', 'weather',
     'ciiChoropleth', 'dayNight',
   ],
+  game: [
+    'hotspots', 'conflicts',
+    'bases', 'nuclear', 'military',
+    'cables', 'pipelines', 'economic', 'waterways',
+    'protests', 'natural', 'weather',
+    'ciiChoropleth', 'dayNight',
+  ],
 };
 
 const SVG_ONLY_LAYERS: Partial<Record<MapVariant, Array<keyof MapLayers>>> = {
